@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mom's PC — Remote Cleanup Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+
+  :root {
+    --bg: #0f1117;
+    --surface: #181c27;
+    --border: #252b3b;
+    --accent: #3b82f6;
+    --accent2: #10b981;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --code-bg: #0d1117;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 300;
+    line-height: 1.7;
+    padding: 40px 20px 80px;
+  }
+
+  .container { max-width: 820px; margin: 0 auto; }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 28px;
+    margin-bottom: 36px;
+  }
+
+  .badge {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    padding: 3px 10px;
+    border-radius: 3px;
+    margin-bottom: 14px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -.02em;
+    line-height: 1.2;
+    margin-bottom: 10px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .warning-box {
+    background: rgba(239,68,68,.08);
+    border: 1px solid rgba(239,68,68,.3);
+    border-left: 3px solid var(--danger);
+    border-radius: 6px;
+    padding: 16px 18px;
+    margin-bottom: 36px;
+    font-size: 14px;
+  }
+
+  .warning-box strong { color: var(--danger); }
+
+  .phase {
+    margin-bottom: 44px;
+  }
+
+  .phase-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .phase-num {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .phase-num.auto { background: rgba(59,130,246,.15); color: var(--accent); border: 1px solid rgba(59,130,246,.3); }
+  .phase-num.manual { background: rgba(245,158,11,.12); color: var(--warn); border: 1px solid rgba(245,158,11,.3); }
+  .phase-num.google { background: rgba(16,185,129,.12); color: var(--accent2); border: 1px solid rgba(16,185,129,.3); }
+
+  .phase-title { font-size: 17px; font-weight: 600; }
+
+  .phase-tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 3px;
+    margin-left: auto;
+  }
+
+  .tag-auto { background: rgba(59,130,246,.15); color: var(--accent); }
+  .tag-manual { background: rgba(245,158,11,.12); color: var(--warn); }
+  .tag-google { background: rgba(16,185,129,.12); color: var(--accent2); }
+
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 10px;
+    display: flex;
+    gap: 16px;
+  }
+
+  .step-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .step-content { flex: 1; }
+  .step-title { font-weight: 600; font-size: 15px; margin-bottom: 5px; }
+  .step-desc { color: #94a3b8; font-size: 14px; }
+
+  code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+    border-radius: 4px;
+    color: #93c5fd;
+  }
+
+  .code-block {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-top: 10px;
+    color: #93c5fd;
+    white-space: pre;
+    overflow-x: auto;
+    line-height: 1.8;
+  }
+
+  .copy-btn {
+    display: inline-block;
+    margin-top: 8px;
+    background: rgba(59,130,246,.15);
+    color: var(--accent);
+    border: 1px solid rgba(59,130,246,.3);
+    border-radius: 5px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .copy-btn:hover { background: rgba(59,130,246,.25); }
+
+  .burner-rules {
+    background: rgba(239,68,68,.06);
+    border: 1px solid rgba(239,68,68,.25);
+    border-radius: 8px;
+    padding: 22px 24px;
+    margin-top: 36px;
+  }
+
+  .burner-rules h3 {
+    color: var(--danger);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .rule {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+
+  .rule-icon { color: var(--danger); flex-shrink: 0; }
+
+  .checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .check-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 14px;
+    color: #94a3b8;
+    cursor: pointer;
+  }
+
+  .check-item input[type=checkbox] {
+    margin-top: 3px;
+    accent-color: var(--accent2);
+    width: 15px; height: 15px;
+    flex-shrink: 0;
+  }
+
+  .check-item.done { text-decoration: line-through; color: var(--muted); }
+
+  .progress-bar-wrap {
+    background: var(--border);
+    border-radius: 99px;
+    height: 6px;
+    margin-bottom: 32px;
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 99px;
+    transition: width .4s ease;
+    width: 0%;
+  }
+
+  .progress-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="badge">⚠ Active Incident</div>
+    <h1>Mom's PC — Remote Cleanup Guide</h1>
+    <p class="subtitle">Infostealer / PUP infection — triage protocol via Chrome Remote Desktop</p>
+  </header>
+
+  <div class="warning-box">
+    <strong>This machine must be treated as compromised</strong> until you can physically wipe it. No banking. No 1Password vault. No saved passwords. See the Burner Rules at the bottom of this guide.
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="progress-label" id="progress-label">Progress — 0 of 9 steps complete</div>
+  <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+
+  <!-- ===================== PHASE A ===================== -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num auto">A</div>
+      <div class="phase-title">Run the PowerShell Script (You do this, remotely)</div>
+      <span class="phase-tag tag-auto">Automated</span>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">1️⃣</div>
+      <div class="step-content">
+        <div class="step-title">Open PowerShell as Administrator on her machine</div>
+        <div class="step-desc">
+          Via Remote Desktop: Press <code>Win + X</code> → click <strong>Terminal (Admin)</strong> or <strong>Windows PowerShell (Admin)</strong>.<br>
+          Paste this to unlock script execution for this session only:
+          <div class="code-block">Set-ExecutionPolicy Bypass -Scope Process -Force</div>
+          <button class="copy-btn" onclick="copyText('Set-ExecutionPolicy Bypass -Scope Process -Force')">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">2️⃣</div>
+      <div class="step-content">
+        <div class="step-title">Download and run cleanup.ps1</div>
+        <div class="step-desc">
+          Open the <strong>cleanup.ps1</strong> file attached to this guide on your own machine, then either:<br><br>
+          <strong>Option A — Copy/paste</strong> the full script content directly into the PowerShell window on her machine.<br><br>
+          <strong>Option B</strong> — If file transfer is available via your remote tool, copy <code>cleanup.ps1</code> to her Desktop and run:
+          <div class="code-block">& "$env:USERPROFILE\Desktop\cleanup.ps1"</div>
+          <button class="copy-btn" onclick="copyText('& &quot;$env:USERPROFILE\\Desktop\\cleanup.ps1&quot;')">Copy</button>
+          <br><br>
+          The script will automatically: quarantine known bad startup keys · uninstall Chrome + delete its AppData · set DNS to Quad9 · download AdwCleaner and HitmanPro to her Desktop.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== PHASE B ===================== -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num google">B</div>
+      <div class="phase-title">Do this on YOUR computer first (Google Sync reset)</div>
+      <span class="phase-tag tag-google">Your machine</span>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">3️⃣</div>
+      <div class="step-content">
+        <div class="step-title">Reset her Google Sync to wipe the malicious extensions from the cloud</div>
+        <div class="step-desc">
+          On your own computer, log into her Google account, then visit:
+          <div class="code-block">https://myaccount.google.com/data-and-privacy</div>
+          <button class="copy-btn" onclick="copyText('https://myaccount.google.com/data-and-privacy')">Copy</button>
+          Navigate to <strong>Manage your data &amp; privacy → Delete a Google service</strong>, or go directly to Chrome sync settings and click <strong>"Reset sync"</strong> / <strong>"Clear data from Google"</strong>. This prevents the malicious extensions from re-syncing to the clean Chrome install.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== PHASE C ===================== -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num manual">C</div>
+      <div class="phase-title">Manual scans on her machine (you walk her through, or do via remote)</div>
+      <span class="phase-tag tag-manual">Manual — remote</span>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">4️⃣</div>
+      <div class="step-content">
+        <div class="step-title">Malwarebytes — quarantine all 45 items</div>
+        <div class="step-desc">
+          Open Malwarebytes. Make sure all detected items are checked. Click <strong>Quarantine</strong>. When prompted to restart, click <strong>Yes</strong>.<br>
+          <em>Note: Restarting will briefly drop your remote session. Reconnect after ~2 minutes.</em>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">5️⃣</div>
+      <div class="step-content">
+        <div class="step-title">Run AdwCleaner (already downloaded to her Desktop\CleanupTools)</div>
+        <div class="step-desc">
+          Double-click <code>AdwCleaner.exe</code>. Click <strong>Scan Now</strong>. When complete, click <strong>Quarantine</strong> on everything found. Specifically targets browser policy hijackers like OneLaunch and Adware.Elex that Malwarebytes may have missed.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">6️⃣</div>
+      <div class="step-content">
+        <div class="step-title">Run HitmanPro (already downloaded to her Desktop\CleanupTools)</div>
+        <div class="step-desc">
+          Double-click <code>HitmanPro.exe</code>. Choose <strong>No, I only want to perform a one-time scan</strong>. Let it run — it uses cloud engines (Sophos, Kaspersky, Bitdefender) to catch rootkits that local scanners miss. Quarantine anything found. Free trial is fine.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">7️⃣</div>
+      <div class="step-content">
+        <div class="step-title">Check Task Manager startup list manually</div>
+        <div class="step-desc">
+          Press <code>Ctrl + Shift + Esc</code> → <strong>Startup apps</strong> tab. The PowerShell script removed known bad entries by name, but scroll through visually. Disable anything you don't recognize — especially items with no publisher, blank icons, or suspicious paths like <code>AppData\Local\Temp</code>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== PHASE D ===================== -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num auto">D</div>
+      <div class="phase-title">Reinstall Chrome, restore bookmarks + safe extensions</div>
+      <span class="phase-tag tag-auto">Quick steps</span>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">8️⃣</div>
+      <div class="step-content">
+        <div class="step-title">Download and reinstall Chrome using Edge</div>
+        <div class="step-desc">
+          Open Microsoft Edge on her machine. Navigate to:
+          <div class="code-block">https://www.google.com/chrome/</div>
+          <button class="copy-btn" onclick="copyText('https://www.google.com/chrome/')">Copy</button>
+          Download and install. <strong>Do not sign into her Google account yet</strong> — wait until you've confirmed the sync reset (Step 3) has processed.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">9️⃣</div>
+      <div class="step-content">
+        <div class="step-title">Import her bookmarks back into new Chrome</div>
+        <div class="step-desc">
+          The script saved <code>bookmarks_backup.html</code> to her Desktop\CleanupTools folder before wiping Chrome. To restore them:<br><br>
+          In the new Chrome → press <code>Ctrl+Shift+O</code> to open Bookmarks → click the <strong>⋮ three-dot menu</strong> → <strong>Import bookmarks</strong> → navigate to <code>Desktop\CleanupTools\bookmarks_backup.html</code> and open it.<br><br>
+          Her bookmarks will appear in a new "Imported" folder in the bookmarks bar.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🔟</div>
+      <div class="step-content">
+        <div class="step-title">Review extensions_report.html before reinstalling anything</div>
+        <div class="step-desc">
+          Open <code>Desktop\CleanupTools\extensions_report.html</code> in Edge. The script read every extension from her infected profile and tagged each one:<br><br>
+          <strong style="color:#10b981">Known safe</strong> — these can be reinstalled from the Chrome Web Store without concern.<br>
+          <strong style="color:#f59e0b">Review before reinstalling</strong> — click the ID link to open its Web Store page. Check the name matches, verify the developer, and check reviews. If anything looks off, skip it.<br>
+          <strong style="color:#64748b">Built-in — skip</strong> — Chrome internals, not user-installed, ignore these.<br><br>
+          <strong>Do not bulk-reinstall.</strong> Add them back one at a time so if something breaks, you know exactly what caused it.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">1️⃣1️⃣</div>
+      <div class="step-content">
+        <div class="step-title">Install uBlock Origin Lite first (before anything else)</div>
+        <div class="step-desc">
+          In the new Chrome, go to:
+          <div class="code-block">https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh</div>
+          <button class="copy-btn" onclick="copyText('https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh')">Copy</button>
+          Install this <em>before</em> any other extensions and before any general browsing. It blocks the fake "Download Here" buttons that likely caused this infection.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROGRESS CHECKLIST -->
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:22px 24px; margin-bottom:28px;">
+    <div style="font-weight:600; margin-bottom:14px;">✅ Track your progress</div>
+    <div class="checklist" id="checklist">
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Ran the PowerShell script as Admin</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Confirmed bookmarks_backup.html was created</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Reviewed extensions_report.html</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Reset Google Sync on your machine</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Malwarebytes quarantine complete + restarted</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> AdwCleaner scan complete</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> HitmanPro scan complete</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Startup apps reviewed in Task Manager</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Chrome reinstalled from Edge</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Bookmarks imported into new Chrome</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> uBlock Origin Lite installed</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Safe extensions reinstalled one by one</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Burner rules explained to mom</label>
+    </div>
+  </div>
+
+  <!-- BURNER RULES -->
+  <div class="burner-rules">
+    <h3>☠ Burner Device Rules — Until You Can Wipe It In Person</h3>
+    <div class="rule"><span class="rule-icon">✗</span> <span><strong>No banking or financial sites</strong> — not even "just to check the balance"</span></div>
+    <div class="rule"><span class="rule-icon">✗</span> <span><strong>No 1Password</strong> — do not install the app or extension. If she needs a password, look it up on her phone and type it manually</span></div>
+    <div class="rule"><span class="rule-icon">✗</span> <span><strong>No entering master passwords</strong> of any kind on this machine</span></div>
+    <div class="rule"><span class="rule-icon">✗</span> <span><strong>No logging into email</strong> on a browser — if she must use email, use the Outlook or Gmail app on her phone</span></div>
+    <div class="rule"><span class="rule-icon">✓</span> <span style="color:#94a3b8">Streaming services (Netflix, etc.) are low-risk — fine to use</span></div>
+    <div class="rule"><span class="rule-icon">✓</span> <span style="color:#94a3b8">News and general browsing is fine with uBlock installed</span></div>
+    <br>
+    <div style="font-size:13px; color: var(--muted);">
+      This machine cannot be certified clean without a full OS wipe. The steps above aggressively reduce risk but cannot guarantee 100% removal of a system-level infostealer. Schedule an in-person visit with a bootable Windows USB to format the drive when possible.
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function copyText(text) {
+    navigator.clipboard.writeText(text).then(() => {
+      event.target.textContent = 'Copied!';
+      setTimeout(() => event.target.textContent = 'Copy', 1500);
+    });
+  }
+
+  function updateProgress() {
+    const boxes = document.querySelectorAll('#checklist input[type=checkbox]');
+    const total = boxes.length;
+    const done = [...boxes].filter(b => b.checked).length;
+    const pct = Math.round((done / total) * 100);
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('progress-label').textContent = `Progress — ${done} of ${total} steps complete`;
+    boxes.forEach(b => {
+      b.closest('.check-item').classList.toggle('done', b.checked);
+    });
+  }
+</script>
+</body>
+</html>
