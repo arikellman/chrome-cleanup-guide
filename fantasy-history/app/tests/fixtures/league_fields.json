@@ -1,0 +1,15 @@
+{
+  "league_key": "458.l.12345",
+  "league_id": "12345",
+  "name": "The Boys of Summer",
+  "season": "2024",
+  "game_key": "458",
+  "num_teams": "10",
+  "scoring_type": "head",
+  "start_week": "1",
+  "end_week": "24",
+  "start_date": "2024-03-28",
+  "end_date": "2024-09-29",
+  "playoff_start_week": "22",
+  "is_finished": "1"
+}
