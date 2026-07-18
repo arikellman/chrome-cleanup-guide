@@ -114,7 +114,7 @@ def _to_int(value: Any) -> int | None:
 def parse_stat_categories(settings: dict[str, Any], season_year: int) -> list[dict[str, Any]]:
     stats_node = (settings.get("stat_categories") or {}).get("stats")
     rows = []
-    for item in unwrap_collection(stats_node):
+    for display_order, item in enumerate(unwrap_collection(stats_node)):
         stat = item.get("stat", item) if isinstance(item, dict) else item
         rows.append(
             {
@@ -123,6 +123,7 @@ def parse_stat_categories(settings: dict[str, Any], season_year: int) -> list[di
                 "name": stat.get("name"),
                 "display_name": stat.get("display_name"),
                 "sort_order": _to_int(stat.get("sort_order")),
+                "display_order": display_order,
                 "is_display_only": 1 if str(stat.get("is_only_display_stat", "0")) == "1" else 0,
                 "position_type": stat.get("position_type"),
             }

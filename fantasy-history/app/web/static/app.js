@@ -10,7 +10,15 @@ const state = {
   meta: null,
   season: null,
   activeTab: "standings",
+  myTeamKey: null,
 };
+
+const MY_TEAM_STORAGE_KEY = "fantasyHistory.myTeamName";
+
+function isRoto() {
+  const s = (state.meta.seasons || []).find((s) => s.season_year === state.season);
+  return !!s && s.scoring_type === "roto";
+}
 
 async function api(path) {
   const res = await fetch(path);
@@ -55,7 +63,9 @@ function renderTable(container, columns, rows, opts = {}) {
     const tbody = sorted
       .map((row) => {
         const cells = columns.map((c) => `<td>${c.render ? c.render(row) : fmt(row[c.key])}</td>`).join("");
-        return opts.rowWrap ? opts.rowWrap(row, cells, columns) : `<tr>${cells}</tr>`;
+        if (opts.rowWrap) return opts.rowWrap(row, cells, columns);
+        const cls = opts.rowClass ? opts.rowClass(row) : "";
+        return `<tr class="${cls}">${cells}</tr>`;
       })
       .join("");
 
@@ -354,6 +364,20 @@ function renderActiveTab() {
   (fns[state.activeTab] || (() => {}))();
 }
 
+function updateScoringTypeUI() {
+  const roto = isRoto();
+  const matchupsBtn = document.querySelector('nav.tabs button[data-tab="matchups"]');
+  const h2hBtn = document.querySelector('nav.tabs button[data-tab="h2h"]');
+  matchupsBtn.style.display = roto ? "none" : "";
+  h2hBtn.style.display = roto ? "none" : "";
+
+  // Roto leagues have no matchups -- if one of those tabs was active
+  // (e.g. the user switched seasons while on it), fall back to Standings.
+  if (roto && (state.activeTab === "matchups" || state.activeTab === "h2h")) {
+    document.querySelector('nav.tabs button[data-tab="standings"]').click();
+  }
+}
+
 // ---------------------------------------------------------------------
 // Standings tab
 // ---------------------------------------------------------------------
@@ -374,7 +398,11 @@ async function renderStandings() {
     { key: "games_back", label: "GB" },
     { key: "playoff_seed", label: "Seed" },
   ];
-  renderTable(container, columns, data.standings, { defaultSort: "rank", defaultAsc: true });
+  renderTable(container, columns, data.standings, {
+    defaultSort: "rank",
+    defaultAsc: true,
+    rowClass: (row) => (row.team_key === state.myTeamKey ? "my-team" : ""),
+  });
 
   if (!standingsChart) {
     standingsChart = createLineChart(
@@ -390,6 +418,82 @@ async function renderStandings() {
     points: t.points.map((p) => ({ x: p.date, y: p.rank })),
   }));
   standingsChart.setData(series);
+
+  document.getElementById("roto-standings-card").style.display = isRoto() ? "block" : "none";
+  if (isRoto()) await renderRotoStandings();
+}
+
+// ---------------------------------------------------------------------
+// Roto standings (Overall Stats / Overall Points)
+// ---------------------------------------------------------------------
+
+function groupCategoriesByPosition(categories) {
+  const batting = categories.filter((c) => c.position_type === "B");
+  const pitching = categories.filter((c) => c.position_type === "P");
+  const other = categories.filter((c) => c.position_type !== "B" && c.position_type !== "P");
+  return [...batting, ...pitching, ...other];
+}
+
+function groupHeaderRow(categories) {
+  const groups = [];
+  let last = null;
+  categories.forEach((c) => {
+    const label = c.position_type === "B" ? "Batting" : c.position_type === "P" ? "Pitching" : "";
+    if (last && last.label === label) last.span += 1;
+    else {
+      last = { label, span: 1 };
+      groups.push(last);
+    }
+  });
+  return groups.map((g) => `<th colspan="${g.span}">${g.label}</th>`).join("");
+}
+
+async function renderRotoStandings() {
+  const data = await api(`/api/roto/standings?season=${state.season}`);
+  const allCats = groupCategoriesByPosition(data.categories || []);
+  const statCats = allCats.filter((c) => !c.is_display_only);
+  const rowClass = (teamKey) => (teamKey === state.myTeamKey ? "my-team" : "");
+
+  const statsContainer = document.getElementById("roto-stats-table");
+  if (!data.standings.length) {
+    statsContainer.innerHTML = `<div class="empty">No stat data pulled yet.</div>`;
+    document.getElementById("roto-points-table").innerHTML = "";
+    return;
+  }
+
+  const sortedByRank = [...data.standings].sort((a, b) => a.rank - b.rank);
+
+  const statsHead =
+    `<tr><th></th><th></th>${groupHeaderRow(allCats)}</tr>` +
+    `<tr><th>Rank</th><th>Team</th>${allCats.map((c) => `<th>${c.display_name}</th>`).join("")}</tr>`;
+  const statsBody = sortedByRank
+    .map(
+      (row) =>
+        `<tr class="${rowClass(row.team_key)}"><td>${row.rank}</td><td>${row.name}</td>` +
+        allCats.map((c) => `<td>${fmt(row.stats[c.stat_id])}</td>`).join("") +
+        `</tr>`
+    )
+    .join("");
+  statsContainer.innerHTML = `<table><thead>${statsHead}</thead><tbody>${statsBody}</tbody></table>`;
+
+  const pointsHead =
+    `<tr><th></th><th></th>${groupHeaderRow(statCats)}<th></th><th></th></tr>` +
+    `<tr><th>Rank</th><th>Team</th>${statCats.map((c) => `<th>${c.display_name}</th>`).join("")}` +
+    `<th>Total</th><th>Change</th></tr>`;
+  const pointsBody = sortedByRank
+    .map((row) => {
+      const change = row.pts_change;
+      const changeCls = change > 0 ? "win" : change < 0 ? "loss" : "";
+      const changeText = change === null || change === undefined ? "-" : change > 0 ? `+${change}` : `${change}`;
+      return (
+        `<tr class="${rowClass(row.team_key)}"><td>${row.rank}</td><td>${row.name}</td>` +
+        statCats.map((c) => `<td>${fmt(row.category_points[c.stat_id])}</td>`).join("") +
+        `<td>${row.total_points}</td><td class="${changeCls}">${changeText}</td></tr>`
+      );
+    })
+    .join("");
+  document.getElementById("roto-points-table").innerHTML =
+    `<table><thead>${pointsHead}</thead><tbody>${pointsBody}</tbody></table>`;
 }
 
 // ---------------------------------------------------------------------
@@ -518,6 +622,15 @@ async function renderCategories() {
     categoryTrendChart.setData([]);
   }
 
+  const winrateSection = document.getElementById("category-winrate-section");
+  if (isRoto()) {
+    // Roto leagues have no matchups to compute a win rate from -- that
+    // breakdown lives in the Standings tab's Overall Points table instead.
+    winrateSection.style.display = "none";
+    return;
+  }
+  winrateSection.style.display = "";
+
   const data = await api(`/api/categories?season=${state.season}`);
   const container = document.getElementById("categories-table");
   const columns = [
@@ -622,6 +735,28 @@ function populateTeamFilter(select) {
   select.dataset.season = String(state.season);
 }
 
+function populateMyTeamSelect() {
+  const select = document.getElementById("my-team-select");
+  const teams = (state.meta.teams || []).filter((t) => t.season_year === state.season);
+  const savedName = localStorage.getItem(MY_TEAM_STORAGE_KEY);
+
+  select.innerHTML =
+    `<option value="">My team...</option>` +
+    teams.map((t) => `<option value="${t.team_key}" data-name="${t.name}">${t.name}</option>`).join("");
+
+  const match = savedName ? teams.find((t) => t.name === savedName) : null;
+  state.myTeamKey = match ? match.team_key : null;
+  select.value = state.myTeamKey || "";
+
+  select.onchange = () => {
+    const option = select.selectedOptions[0];
+    state.myTeamKey = select.value || null;
+    if (select.value) localStorage.setItem(MY_TEAM_STORAGE_KEY, option.dataset.name);
+    else localStorage.removeItem(MY_TEAM_STORAGE_KEY);
+    renderActiveTab();
+  };
+}
+
 function updatePullStatus() {
   const pill = document.getElementById("pull-status");
   const last = state.meta.last_successful_pull;
@@ -656,10 +791,14 @@ async function init() {
   state.season = seasons[0] || null;
   seasonSelect.onchange = () => {
     state.season = Number(seasonSelect.value);
+    updateScoringTypeUI();
+    populateMyTeamSelect();
     renderActiveTab();
   };
 
   setupTabs();
+  updateScoringTypeUI();
+  populateMyTeamSelect();
 
   document.getElementById("pull-now").onclick = async (e) => {
     e.target.disabled = true;

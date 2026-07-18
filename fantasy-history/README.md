@@ -83,7 +83,14 @@ in your Yahoo account.
 
 ## Dashboard
 
-Six tabs, all filterable/sortable, no page reloads:
+Pick your team from the "My team..." selector in the header (remembered across
+visits) to have it highlighted throughout every table.
+
+The dashboard adapts to your league's scoring type automatically (each season
+is checked independently, so a switch from head-to-head to roto, or vice
+versa, is handled correctly per year):
+
+**Head-to-head leagues** get six tabs, all filterable/sortable, no page reloads:
 
 - **Standings** -- current (or any-date) standings table, plus a rank-over-time
   chart across the season with a clickable legend to isolate teams.
@@ -100,6 +107,24 @@ Six tabs, all filterable/sortable, no page reloads:
   name search.
 - **History** -- one row per season showing final standings once Yahoo marks
   the season finished.
+
+**Rotisserie leagues** don't have weekly matchups, so the Matchups and
+Head-to-Head tabs are hidden automatically, and the Standings tab gains two
+extra tables that reconstruct Yahoo's own roto standings page from the daily
+stat snapshots:
+
+- **Overall Stats** -- each team's raw cumulative total per category
+  (Batting/Pitching grouped, matching Yahoo's layout), ranked by total points.
+- **Overall Points** -- each category converted to roto points (best team in
+  a category gets one point per team in the league, ties split the points),
+  a Total column, and a day-over-day Change column so you can see who gained
+  or lost ground since the last pull.
+
+Counting stats (HR, RBI, SB, W, SV, ...) match Yahoo's own points exactly.
+Rate stats (ERA, WHIP, OBP) may differ slightly near the innings/at-bat
+qualifier minimum Yahoo applies to those categories, since that threshold
+rule isn't exposed anywhere in the league settings the API returns and so
+isn't modeled here -- see `app/roto.py` for details.
 
 ## If you'd rather not leave `serve` running
 

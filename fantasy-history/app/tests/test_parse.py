@@ -55,7 +55,9 @@ class TestLeagueParsing(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["stat_id"], 7)
         self.assertEqual(rows[0]["display_name"], "R")
+        self.assertEqual(rows[0]["display_order"], 0)
         self.assertEqual(rows[1]["stat_id"], 12)
+        self.assertEqual(rows[1]["display_order"], 1)
 
 
 class TestTeamParsing(unittest.TestCase):

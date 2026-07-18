@@ -177,7 +177,9 @@ def run_daily_pull(kind: str = "daily") -> dict[str, Any]:
             logger.exception("settings/standings pull failed")
             errors.append(f"settings/standings: {exc}")
 
-        if season_row:
+        # Roto leagues have no weekly head-to-head matchups; Yahoo's
+        # scoreboard endpoint doesn't apply, so skip it entirely.
+        if season_row and season_row.get("scoring_type") != "roto":
             try:
                 start_week = season_row.get("start_week") or 1
                 end_week = current_week or season_row.get("end_week") or start_week

@@ -15,6 +15,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, g, jsonify, request, send_from_directory
 
 from app import config as cfg
+from app import roto
 from app.db import database
 from app.jobs.daily import run_daily_pull
 
@@ -66,7 +67,7 @@ def create_app() -> Flask:
         stat_categories = _rows(
             conn.execute(
                 "SELECT * FROM stat_categories WHERE is_display_only = 0 "
-                "ORDER BY season_year DESC, sort_order"
+                "ORDER BY season_year DESC, display_order"
             )
         )
         last_ok = database.last_successful_fetch(conn)
@@ -243,6 +244,92 @@ def create_app() -> Flask:
 
         return jsonify({"season": season, "matchups": list(grid.values())})
 
+    @app.route("/api/roto/standings")
+    def api_roto_standings():
+        """Reconstructs Yahoo's roto 'Overall Stats' / 'Overall Points'
+        tables from our own daily stat snapshots (see app/roto.py), plus a
+        day-over-day points change versus the previous available snapshot."""
+        conn = get_db()
+        season = request.args.get("season", type=int) or _latest_season(conn)
+        if season is None:
+            return jsonify({"season": None, "date": None, "categories": [], "standings": []})
+
+        date = request.args.get("date")
+        if not date:
+            row = conn.execute(
+                "SELECT MAX(snapshot_date) AS d FROM team_stat_snapshots WHERE season_year = ?", (season,)
+            ).fetchone()
+            date = row["d"] if row else None
+        if not date:
+            return jsonify({"season": season, "date": None, "categories": [], "standings": []})
+
+        categories = _rows(
+            conn.execute(
+                "SELECT stat_id, display_name, position_type, sort_order, is_display_only "
+                "FROM stat_categories WHERE season_year = ? ORDER BY display_order",
+                (season,),
+            )
+        )
+        scored_categories = [c for c in categories if not c["is_display_only"]]
+
+        def stat_values_for(snapshot_date: str) -> dict[str, dict[int, float]]:
+            rows = conn.execute(
+                "SELECT team_key, stat_id, value FROM team_stat_snapshots "
+                "WHERE season_year = ? AND snapshot_date = ?",
+                (season, snapshot_date),
+            ).fetchall()
+            values: dict[str, dict[int, float]] = {}
+            for r in rows:
+                try:
+                    v = float(r["value"])
+                except (TypeError, ValueError):
+                    continue
+                values.setdefault(r["team_key"], {})[r["stat_id"]] = v
+            return values
+
+        team_values = stat_values_for(date)
+        computed = roto.compute_standings(team_values, scored_categories)
+
+        prev_row = conn.execute(
+            "SELECT MAX(snapshot_date) AS d FROM team_stat_snapshots "
+            "WHERE season_year = ? AND snapshot_date < ?",
+            (season, date),
+        ).fetchone()
+        prev_date = prev_row["d"] if prev_row else None
+        prev_totals: dict[str, float] = {}
+        if prev_date:
+            prev_computed = roto.compute_standings(stat_values_for(prev_date), scored_categories)
+            prev_totals = {tk: d["total_points"] for tk, d in prev_computed.items()}
+
+        team_info = {
+            r["team_key"]: {"name": r["name"], "manager_nickname": r["manager_nickname"]}
+            for r in conn.execute(
+                "SELECT team_key, name, manager_nickname FROM teams WHERE season_year = ?", (season,)
+            )
+        }
+
+        standings = []
+        for team_key, data in computed.items():
+            total = round(data["total_points"], 2)
+            pts_change = round(total - prev_totals[team_key], 2) if team_key in prev_totals else None
+            standings.append(
+                {
+                    "team_key": team_key,
+                    "name": team_info.get(team_key, {}).get("name"),
+                    "manager_nickname": team_info.get(team_key, {}).get("manager_nickname"),
+                    "stats": team_values.get(team_key, {}),
+                    "category_points": data["category_points"],
+                    "total_points": total,
+                    "pts_change": pts_change,
+                }
+            )
+        standings.sort(key=lambda s: -s["total_points"])
+        roto.rank_by_total_points(standings)
+
+        return jsonify(
+            {"season": season, "date": date, "prev_date": prev_date, "categories": categories, "standings": standings}
+        )
+
     @app.route("/api/categories")
     def api_categories():
         conn = get_db()
@@ -268,7 +355,7 @@ def create_app() -> Flask:
         if team:
             query.append("AND mts.team_key = ?")
             params.append(team)
-        query.append("GROUP BY mts.team_key, mts.stat_id ORDER BY sc.sort_order, t.name")
+        query.append("GROUP BY mts.team_key, mts.stat_id ORDER BY sc.display_order, t.name")
         rows = _rows(conn.execute(" ".join(query), params))
         return jsonify({"season": season, "categories": rows})
 
@@ -369,7 +456,7 @@ def create_app() -> Flask:
                   AND tss.snapshot_date = (
                       SELECT MAX(snapshot_date) FROM team_stat_snapshots WHERE team_key = ?
                   )
-                ORDER BY sc.sort_order
+                ORDER BY sc.display_order
                 """,
                 (team_key, team_key),
             )

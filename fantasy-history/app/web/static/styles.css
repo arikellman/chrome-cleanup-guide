@@ -168,6 +168,24 @@ tr.matchup-detail td {
   background: var(--bg);
 }
 
+tr.my-team, tr.my-team:hover {
+  background: var(--accent-soft);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.roto-table-wrap table th {
+  cursor: default;
+}
+.roto-table-wrap table thead tr:first-child th {
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: none;
+}
+
 .win { color: var(--good); font-weight: 600; }
 .loss { color: var(--bad); }
 

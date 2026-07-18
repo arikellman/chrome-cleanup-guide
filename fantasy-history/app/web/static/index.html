@@ -11,6 +11,7 @@
 <header>
   <h1>🏆 Fantasy Baseball History</h1>
   <select id="season-select"></select>
+  <select id="my-team-select"><option value="">My team...</option></select>
   <span id="pull-status" class="pill">loading...</span>
   <button id="pull-now">Pull now</button>
 </header>
@@ -35,6 +36,18 @@
       <h2>Rank over time</h2>
       <canvas id="standings-chart" class="chart" width="1100" height="360"></canvas>
       <div id="standings-legend" class="legend"></div>
+    </div>
+    <div class="card" id="roto-standings-card" style="display:none">
+      <h2>Overall Stats</h2>
+      <div id="roto-stats-table" class="roto-table-wrap"></div>
+      <h2 style="margin-top:20px">Overall Points</h2>
+      <div id="roto-points-table" class="roto-table-wrap"></div>
+      <p style="color:var(--muted);font-size:12px;margin-top:8px">
+        Points are computed from each day's stat totals (best team in a category gets
+        one point per team in the league, ties split the points). Rate stats (ERA, WHIP, OBP)
+        may differ slightly from Yahoo's own numbers near the innings/at-bat minimum threshold,
+        which isn't modeled here.
+      </p>
     </div>
   </section>
 
@@ -68,13 +81,15 @@
       <canvas id="category-trend-chart" class="chart" width="1100" height="360"></canvas>
       <div id="category-trend-legend" class="legend"></div>
     </div>
-    <div class="card">
-      <h2>Category win rates (matchups so far)</h2>
-      <canvas id="categories-chart" class="chart" width="1100" height="360"></canvas>
-    </div>
-    <div class="card">
-      <h2>All categories (table)</h2>
-      <div id="categories-table"></div>
+    <div id="category-winrate-section">
+      <div class="card">
+        <h2>Category win rates (matchups so far)</h2>
+        <canvas id="categories-chart" class="chart" width="1100" height="360"></canvas>
+      </div>
+      <div class="card">
+        <h2>All categories (table)</h2>
+        <div id="categories-table"></div>
+      </div>
     </div>
   </section>
 

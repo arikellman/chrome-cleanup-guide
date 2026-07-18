@@ -26,7 +26,11 @@ CREATE TABLE IF NOT EXISTS stat_categories (
     stat_id INTEGER NOT NULL,
     name TEXT,
     display_name TEXT,
-    sort_order INTEGER,
+    sort_order INTEGER,       -- Yahoo's ranking DIRECTION flag: 1 = higher value is
+                              -- better (descending rank), 0 = lower is better (ERA,
+                              -- WHIP, ...). Used for roto point math, NOT column order.
+    display_order INTEGER,   -- position of this stat in Yahoo's own category list,
+                              -- i.e. the column order to display it in.
     is_display_only INTEGER DEFAULT 0,
     position_type TEXT,
     PRIMARY KEY (season_year, stat_id)

@@ -29,14 +29,15 @@ def backfill_season(client: YahooClient, conn, league_key: str, season_year: int
         errors.append(f"{season_year} settings/standings: {exc}")
         return errors
 
-    try:
-        start_week = season_row.get("start_week") or 1
-        end_week = season_row.get("end_week") or start_week
-        daily.pull_scoreboards(client, conn, league_key, season_year, start_week, end_week)
-        conn.commit()
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("backfill scoreboards failed for %s", league_key)
-        errors.append(f"{season_year} scoreboards: {exc}")
+    if season_row.get("scoring_type") != "roto":
+        try:
+            start_week = season_row.get("start_week") or 1
+            end_week = season_row.get("end_week") or start_week
+            daily.pull_scoreboards(client, conn, league_key, season_year, start_week, end_week)
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("backfill scoreboards failed for %s", league_key)
+            errors.append(f"{season_year} scoreboards: {exc}")
 
     try:
         daily.pull_transactions(client, conn, league_key, season_year)
