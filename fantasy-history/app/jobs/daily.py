@@ -113,14 +113,16 @@ def pull_transactions(client: YahooClient, conn, league_key: str, season_year: i
     database.upsert_transaction_players(conn, [r for r in player_rows if r["transaction_key"] in new_keys])
 
 
-def pull_team_season_stats(client: YahooClient, conn, league_key: str, season_year: int) -> None:
+def pull_team_stat_snapshots(
+    client: YahooClient, conn, league_key: str, season_year: int, snapshot_date: str
+) -> None:
     body = client.get(
         f"league/{league_key}/teams", params={"out": "stats", "type": "season"}, season_year=season_year
     )
     league_list = _league_list(body)
     teams_node = find_subresource(league_list, "teams") or {}
-    rows = parse.parse_team_season_stats(teams_node, season_year)
-    database.upsert_team_season_stats(conn, rows)
+    rows = parse.parse_team_stat_snapshots(teams_node, season_year, snapshot_date)
+    database.insert_team_stat_snapshots(conn, rows)
 
 
 def maybe_write_final_standings(conn, season_row: dict[str, Any]) -> None:
@@ -194,11 +196,11 @@ def run_daily_pull(kind: str = "daily") -> dict[str, Any]:
             errors.append(f"transactions: {exc}")
 
         try:
-            pull_team_season_stats(client, conn, league_key, season_year)
+            pull_team_stat_snapshots(client, conn, league_key, season_year, snapshot_date)
             conn.commit()
         except Exception as exc:  # noqa: BLE001
-            logger.exception("team season stats pull failed")
-            errors.append(f"team_season_stats: {exc}")
+            logger.exception("team stat snapshot pull failed")
+            errors.append(f"team_stat_snapshots: {exc}")
 
         if season_row:
             try:

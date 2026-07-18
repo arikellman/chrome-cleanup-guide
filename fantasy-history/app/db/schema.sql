@@ -89,13 +89,19 @@ CREATE TABLE IF NOT EXISTS standings_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_standings_season ON standings_snapshots(season_year);
 
-CREATE TABLE IF NOT EXISTS team_season_stats (
+-- One row per (day, team, stat) so category totals (HR, RBI, ERA, ...)
+-- build up daily history within a season, not just a "latest" snapshot --
+-- this is what lets the dashboard show day-to-day and cumulative trends
+-- for every stat, not just win/loss rank.
+CREATE TABLE IF NOT EXISTS team_stat_snapshots (
+    snapshot_date TEXT NOT NULL,
     season_year INTEGER NOT NULL,
     team_key TEXT NOT NULL,
     stat_id INTEGER NOT NULL,
     value TEXT,
-    PRIMARY KEY (season_year, team_key, stat_id)
+    PRIMARY KEY (snapshot_date, team_key, stat_id)
 );
+CREATE INDEX IF NOT EXISTS idx_team_stat_snapshots_season ON team_stat_snapshots(season_year, stat_id);
 
 CREATE TABLE IF NOT EXISTS transactions (
     transaction_key TEXT PRIMARY KEY,

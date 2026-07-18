@@ -80,9 +80,9 @@ def insert_standings_snapshot(conn: sqlite3.Connection, rows: Iterable[dict[str,
         _upsert(conn, "standings_snapshots", row, ["snapshot_date", "team_key"])
 
 
-def upsert_team_season_stats(conn: sqlite3.Connection, rows: Iterable[dict[str, Any]]) -> None:
+def insert_team_stat_snapshots(conn: sqlite3.Connection, rows: Iterable[dict[str, Any]]) -> None:
     for row in rows:
-        _upsert(conn, "team_season_stats", row, ["season_year", "team_key", "stat_id"])
+        _upsert(conn, "team_stat_snapshots", row, ["snapshot_date", "team_key", "stat_id"])
 
 
 def upsert_transaction(conn: sqlite3.Connection, row: dict[str, Any]) -> None:

@@ -46,11 +46,11 @@ def backfill_season(client: YahooClient, conn, league_key: str, season_year: int
         errors.append(f"{season_year} transactions: {exc}")
 
     try:
-        daily.pull_team_season_stats(client, conn, league_key, season_year)
+        daily.pull_team_stat_snapshots(client, conn, league_key, season_year, snapshot_date)
         conn.commit()
     except Exception as exc:  # noqa: BLE001
-        logger.exception("backfill team season stats failed for %s", league_key)
-        errors.append(f"{season_year} team_season_stats: {exc}")
+        logger.exception("backfill team stat snapshot failed for %s", league_key)
+        errors.append(f"{season_year} team_stat_snapshots: {exc}")
 
     try:
         daily.maybe_write_final_standings(conn, season_row)

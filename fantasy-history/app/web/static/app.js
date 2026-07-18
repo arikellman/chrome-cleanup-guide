@@ -487,6 +487,8 @@ async function renderH2H() {
 // Categories tab
 // ---------------------------------------------------------------------
 
+let categoryTrendChart = null;
+
 async function renderCategories() {
   const statSel = document.getElementById("category-stat-filter");
   const cats = (state.meta.stat_categories || []).filter((c) => c.season_year === state.season);
@@ -494,6 +496,26 @@ async function renderCategories() {
     statSel.innerHTML = cats.map((c) => `<option value="${c.stat_id}">${c.display_name}</option>`).join("");
     statSel.dataset.season = String(state.season);
     statSel.onchange = renderCategories;
+  }
+
+  if (!categoryTrendChart) {
+    categoryTrendChart = createLineChart(
+      document.getElementById("category-trend-chart"),
+      document.getElementById("category-trend-legend"),
+      { invert: false, yLabel: "" }
+    );
+  }
+  const statId = statSel.value ? Number(statSel.value) : null;
+  if (statId) {
+    const timeline = await api(`/api/stats/timeline?season=${state.season}&stat_id=${statId}`);
+    const series = Object.entries(timeline.teams).map(([key, t]) => ({
+      key,
+      name: t.name,
+      points: t.points.map((p) => ({ x: p.date, y: p.value })),
+    }));
+    categoryTrendChart.setData(series);
+  } else {
+    categoryTrendChart.setData([]);
   }
 
   const data = await api(`/api/categories?season=${state.season}`);
@@ -508,7 +530,6 @@ async function renderCategories() {
   ];
   renderTable(container, columns, data.categories, { emptyText: "No matchup category data yet." });
 
-  const statId = statSel.value ? Number(statSel.value) : null;
   const bars = data.categories
     .filter((c) => (statId ? c.stat_id === statId : true))
     .filter((c) => c.played > 0)

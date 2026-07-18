@@ -82,10 +82,11 @@ class TestTeamParsing(unittest.TestCase):
         self.assertEqual(team1["playoff_seed"], 1)
         self.assertEqual(team1["snapshot_date"], "2024-07-01")
 
-    def test_parse_team_season_stats(self):
+    def test_parse_team_stat_snapshots(self):
         teams_node = load("teams_node.json")
-        rows = parse.parse_team_season_stats(teams_node, 2024)
+        rows = parse.parse_team_stat_snapshots(teams_node, 2024, "2024-07-01")
         self.assertEqual(len(rows), 4)  # 2 teams x 2 stat categories
+        self.assertTrue(all(r["snapshot_date"] == "2024-07-01" for r in rows))
         team1_stats = {r["stat_id"]: r["value"] for r in rows if r["team_key"] == "458.l.12345.t.1"}
         self.assertEqual(team1_stats[7], "845")
         self.assertEqual(team1_stats[12], "210")

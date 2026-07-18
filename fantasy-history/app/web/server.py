@@ -272,6 +272,38 @@ def create_app() -> Flask:
         rows = _rows(conn.execute(" ".join(query), params))
         return jsonify({"season": season, "categories": rows})
 
+    @app.route("/api/stats/timeline")
+    def api_stats_timeline():
+        """Day-by-day cumulative value of one stat category per team, so
+        within-season trends (not just weekly matchup results) are visible."""
+        conn = get_db()
+        season = request.args.get("season", type=int) or _latest_season(conn)
+        stat_id = request.args.get("stat_id", type=int)
+        if season is None or stat_id is None:
+            return jsonify({"season": season, "stat_id": stat_id, "teams": {}})
+
+        rows = _rows(
+            conn.execute(
+                """
+                SELECT tss.snapshot_date, tss.team_key, tss.value, t.name
+                FROM team_stat_snapshots tss
+                JOIN teams t ON t.team_key = tss.team_key
+                WHERE tss.season_year = ? AND tss.stat_id = ?
+                ORDER BY tss.snapshot_date ASC
+                """,
+                (season, stat_id),
+            )
+        )
+        teams: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            entry = teams.setdefault(r["team_key"], {"name": r["name"], "points": []})
+            try:
+                value = float(r["value"])
+            except (TypeError, ValueError):
+                continue
+            entry["points"].append({"date": r["snapshot_date"], "value": value})
+        return jsonify({"season": season, "stat_id": stat_id, "teams": teams})
+
     @app.route("/api/transactions")
     def api_transactions():
         conn = get_db()
@@ -331,12 +363,15 @@ def create_app() -> Flask:
             conn.execute(
                 """
                 SELECT tss.stat_id, sc.display_name, tss.value
-                FROM team_season_stats tss
+                FROM team_stat_snapshots tss
                 LEFT JOIN stat_categories sc ON sc.season_year = tss.season_year AND sc.stat_id = tss.stat_id
                 WHERE tss.team_key = ?
+                  AND tss.snapshot_date = (
+                      SELECT MAX(snapshot_date) FROM team_stat_snapshots WHERE team_key = ?
+                  )
                 ORDER BY sc.sort_order
                 """,
-                (team_key,),
+                (team_key, team_key),
             )
         )
         matchups = _rows(

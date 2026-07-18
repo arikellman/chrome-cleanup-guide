@@ -1,10 +1,14 @@
 # Fantasy Baseball History
 
-Yahoo removed the ability to see your league's history. This app pulls your
-team and league results from Yahoo's official Fantasy Sports API once a day,
-builds up history over time in a local SQLite database, and serves a local,
-interactive dashboard so you can explore and filter every stat it has
-collected.
+Yahoo only shows you a snapshot of *right now* -- it doesn't let you see how
+your league's standings or stats changed day to day over the season, and it
+hides past-season history entirely. This app pulls your team and league
+results from Yahoo's official Fantasy Sports API once a day, keeps a
+day-by-day snapshot of everything (standings, rank, every stat category's
+running total) in a local SQLite database, and serves a local, interactive
+dashboard so you can see trends build up over the season and explore/filter
+every stat it has collected. It can also backfill prior seasons of the same
+league, since Yahoo's API still has that data even though the UI hides it.
 
 You authenticate with Yahoo **once**. After that it runs unattended forever
 (until you revoke access in your Yahoo account settings).
@@ -88,8 +92,10 @@ Six tabs, all filterable/sortable, no page reloads:
 - **Head-to-Head** -- all-time win/loss record between every pair of managers
   (tracked by Yahoo manager GUID, so it follows people across seasons/renamed
   teams), with a toggle for a single season vs. combined history.
-- **Categories** -- per-team win rate for each stat category, as a bar chart
-  plus a full table.
+- **Categories** -- a day-by-day trend chart of each stat category's running
+  season total per team (pick HR, ERA, etc. from the dropdown to see it climb
+  or dip over the season), plus per-team win rate across matchups so far as a
+  bar chart and full table.
 - **Transactions** -- add/drop/trade log, filterable by team, type, and player
   name search.
 - **History** -- one row per season showing final standings once Yahoo marks

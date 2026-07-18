@@ -61,10 +61,15 @@
 
   <section id="panel-categories" class="panel">
     <div class="card">
-      <h2>Category win rates</h2>
+      <h2>Category trend over time (day by day this season)</h2>
       <div class="filters">
         <select id="category-stat-filter"></select>
       </div>
+      <canvas id="category-trend-chart" class="chart" width="1100" height="360"></canvas>
+      <div id="category-trend-legend" class="legend"></div>
+    </div>
+    <div class="card">
+      <h2>Category win rates (matchups so far)</h2>
       <canvas id="categories-chart" class="chart" width="1100" height="360"></canvas>
     </div>
     <div class="card">

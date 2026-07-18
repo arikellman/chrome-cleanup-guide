@@ -202,7 +202,12 @@ def parse_standings_snapshot(
     return rows
 
 
-def parse_team_season_stats(teams_node: Any, season_year: int) -> list[dict[str, Any]]:
+def parse_team_stat_snapshots(
+    teams_node: Any, season_year: int, snapshot_date: str
+) -> list[dict[str, Any]]:
+    """One row per (team, stat category) for this pull, so cumulative
+    season-to-date totals (HR, RBI, ERA, ...) build up daily history
+    instead of being overwritten on every pull."""
     rows = []
     for item in unwrap_collection(teams_node):
         raw_team = item.get("team", item) if isinstance(item, dict) else item
@@ -213,6 +218,7 @@ def parse_team_season_stats(teams_node: Any, season_year: int) -> list[dict[str,
             stat = stat_entry.get("stat", stat_entry) if isinstance(stat_entry, dict) else stat_entry
             rows.append(
                 {
+                    "snapshot_date": snapshot_date,
                     "season_year": season_year,
                     "team_key": team_key,
                     "stat_id": int(stat["stat_id"]),
