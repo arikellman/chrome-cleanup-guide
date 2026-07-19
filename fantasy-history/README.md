@@ -88,6 +88,7 @@ in your Yahoo account.
 | `python -m app backfill --season 2022` | Recover a single season |
 | `python -m app serve [--host] [--port]` | Run the dashboard + daily scheduler |
 | `python -m app status` | Show config/auth/database status |
+| `python -m app diagnose` | Per-category data coverage + raw standings shape, for debugging gaps |
 
 ## Dashboard
 

@@ -182,8 +182,12 @@ def parse_standings_snapshot(
     for item in unwrap_collection(teams_node):
         raw_team = item.get("team", item) if isinstance(item, dict) else item
         team = _flatten_team_node(raw_team)
-        standings = team.get("team_standings") or {}
-        outcome = standings.get("outcome_totals") or {}
+        # team_standings/outcome_totals can come back as a list of
+        # single-key dicts rather than a plain dict -- the same shape
+        # quirk confirmed for the league "settings" sub-resource -- so
+        # flatten defensively rather than assume a plain dict here too.
+        standings = flatten_field_list(team.get("team_standings") or {})
+        outcome = flatten_field_list(standings.get("outcome_totals") or {})
         rows.append(
             {
                 "snapshot_date": snapshot_date,

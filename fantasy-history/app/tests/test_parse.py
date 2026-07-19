@@ -84,6 +84,35 @@ class TestTeamParsing(unittest.TestCase):
         self.assertEqual(team1["playoff_seed"], 1)
         self.assertEqual(team1["snapshot_date"], "2024-07-01")
 
+    def test_parse_standings_snapshot_list_wrapped_team_standings(self):
+        # Confirmed against a real roto league: team_standings (and its
+        # nested outcome_totals) can come back as a list of single-key
+        # dicts rather than a plain dict -- the same shape quirk already
+        # seen for the league "settings" sub-resource -- which silently
+        # produced all-null rank/wins/losses/pct rows before this was
+        # flattened defensively.
+        teams_node = {
+            "0": {
+                "team": [
+                    [{"team_key": "458.l.12345.t.1"}],
+                    {
+                        "team_standings": [
+                            {"rank": "1"},
+                            {"outcome_totals": [{"wins": "80"}, {"losses": "40"}, {"ties": "0"}, {"percentage": ".667"}]},
+                            {"playoff_seed": "1"},
+                        ]
+                    },
+                ]
+            },
+            "count": 1,
+        }
+        rows = parse.parse_standings_snapshot(teams_node, 2024, "2024-07-01")
+        self.assertEqual(rows[0]["rank"], 1)
+        self.assertEqual(rows[0]["wins"], 80)
+        self.assertEqual(rows[0]["losses"], 40)
+        self.assertAlmostEqual(rows[0]["pct"], 0.667)
+        self.assertEqual(rows[0]["playoff_seed"], 1)
+
     def test_parse_team_stat_snapshots(self):
         teams_node = load("teams_node.json")
         rows = parse.parse_team_stat_snapshots(teams_node, 2024, "2024-07-01")

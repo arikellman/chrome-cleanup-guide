@@ -182,6 +182,91 @@ def cmd_status(_args: argparse.Namespace) -> None:
     conn.close()
 
 
+def cmd_diagnose(_args: argparse.Namespace) -> None:
+    """Prints exactly what's in the DB for the current season's stat
+    categories and standings, so a gap (a category with no trend data, an
+    empty standings table) can be pinpointed without guessing -- this
+    sandbox has no way to hit Yahoo's API directly, so this is how real
+    data gets inspected."""
+    import json
+
+    config = cfg.load_config()
+    season_year = config.get("season_year")
+    if not cfg.DB_PATH.exists() or not season_year:
+        print("No database/season yet -- run pull/backfill first.")
+        return
+
+    conn = database.get_connection()
+
+    print(f"=== stat_categories (season {season_year}) vs. data coverage ===")
+    cats = conn.execute(
+        "SELECT stat_id, name, display_name, position_type, sort_order, is_display_only "
+        "FROM stat_categories WHERE season_year = ? ORDER BY display_order",
+        (season_year,),
+    ).fetchall()
+    if not cats:
+        print("  (no stat_categories rows -- settings pull never succeeded)")
+    for c in cats:
+        delta_row = conn.execute(
+            "SELECT COUNT(DISTINCT snapshot_date) AS n, COUNT(*) AS rows "
+            "FROM team_daily_stat_deltas WHERE season_year = ? AND stat_id = ?",
+            (season_year, c["stat_id"]),
+        ).fetchone()
+        snap_row = conn.execute(
+            "SELECT COUNT(DISTINCT snapshot_date) AS n, COUNT(*) AS rows "
+            "FROM team_stat_snapshots WHERE season_year = ? AND stat_id = ?",
+            (season_year, c["stat_id"]),
+        ).fetchone()
+        flag = " <- is_display_only" if c["is_display_only"] else ""
+        print(
+            f"  [{c['stat_id']:>3}] {c['display_name'] or c['name']:<12} "
+            f"pos={c['position_type'] or '-':<2} sort_order={c['sort_order']}  "
+            f"deltas: {delta_row['n']} distinct days ({delta_row['rows']} rows)  "
+            f"snapshots: {snap_row['n']} distinct days ({snap_row['rows']} rows){flag}"
+        )
+
+    print(f"\n=== standings_snapshots (season {season_year}) ===")
+    rows = conn.execute(
+        "SELECT snapshot_date, team_key, rank, wins, losses, ties, pct, games_back, playoff_seed "
+        "FROM standings_snapshots WHERE season_year = ? ORDER BY snapshot_date DESC, rank ASC LIMIT 5",
+        (season_year,),
+    ).fetchall()
+    if not rows:
+        print("  (no rows at all)")
+    for r in rows:
+        print(f"  {dict(r)}")
+
+    print("\n=== raw team_standings shape (most recent league settings/standings pull) ===")
+    raw = conn.execute(
+        "SELECT body_json FROM raw_responses WHERE endpoint LIKE 'league/%' "
+        "AND params LIKE '%standings%' AND season_year = ? ORDER BY fetched_at DESC LIMIT 1",
+        (season_year,),
+    ).fetchone()
+    if not raw:
+        print("  (no matching raw response saved)")
+    else:
+        try:
+            body = json.loads(raw["body_json"])
+            league_list = body["fantasy_content"]["league"]
+            for item in league_list[1:]:
+                if isinstance(item, dict) and "standings" in item:
+                    standings_val = item["standings"]
+                    teams_node = None
+                    if isinstance(standings_val, list) and standings_val:
+                        teams_node = standings_val[0].get("teams") if isinstance(standings_val[0], dict) else None
+                    elif isinstance(standings_val, dict):
+                        teams_node = standings_val.get("teams")
+                    first_team = (teams_node or {}).get("0") if isinstance(teams_node, dict) else None
+                    print(json.dumps(first_team, indent=2)[:2000])
+                    break
+            else:
+                print("  (no 'standings' key found in saved response)")
+        except Exception as exc:  # noqa: BLE001 - diagnostic only
+            print(f"  Failed to parse saved raw response: {exc}")
+
+    conn.close()
+
+
 def main() -> None:
     cfg.ensure_data_dir()
     logging.basicConfig(
@@ -215,6 +300,10 @@ def main() -> None:
     p_serve.set_defaults(func=cmd_serve)
 
     sub.add_parser("status", help="Show config, auth, and database status").set_defaults(func=cmd_status)
+
+    sub.add_parser(
+        "diagnose", help="Print per-category data coverage and raw standings shape for debugging"
+    ).set_defaults(func=cmd_diagnose)
 
     args = parser.parse_args()
     args.func(args)
