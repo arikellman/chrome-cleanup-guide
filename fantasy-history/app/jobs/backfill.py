@@ -151,6 +151,11 @@ def run_backfill(season_year: int | None = None) -> dict[str, Any]:
         if season_year is not None:
             targets = [t for t in targets if t[0] == season_year]
 
+        if not targets:
+            msg = "No league configured to backfill. Run: python -m app auth"
+            database.finish_fetch_log(conn, log_id, "error", msg)
+            return {"status": "error", "errors": [msg], "seasons": []}
+
         for year, league_key in targets:
             logger.info("Backfilling season %s (%s)", year, league_key)
             all_errors.extend(backfill_season(client, conn, league_key, year))
