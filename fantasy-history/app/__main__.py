@@ -248,19 +248,25 @@ def cmd_diagnose(_args: argparse.Namespace) -> None:
         try:
             body = json.loads(raw["body_json"])
             league_list = body["fantasy_content"]["league"]
+            standings_val = None
             for item in league_list[1:]:
                 if isinstance(item, dict) and "standings" in item:
                     standings_val = item["standings"]
-                    teams_node = None
-                    if isinstance(standings_val, list) and standings_val:
-                        teams_node = standings_val[0].get("teams") if isinstance(standings_val[0], dict) else None
-                    elif isinstance(standings_val, dict):
-                        teams_node = standings_val.get("teams")
-                    first_team = (teams_node or {}).get("0") if isinstance(teams_node, dict) else None
-                    print(json.dumps(first_team, indent=2)[:2000])
                     break
+            if isinstance(standings_val, list) and standings_val:
+                standings_val = standings_val[0]
+            teams_node = standings_val.get("teams") if isinstance(standings_val, dict) else None
+            first_wrapper = (teams_node or {}).get("0") if isinstance(teams_node, dict) else None
+            raw_team = (first_wrapper or {}).get("team") if isinstance(first_wrapper, dict) else None
+            if raw_team is None:
+                print("  (no 'standings.teams' found in saved response)")
             else:
-                print("  (no 'standings' key found in saved response)")
+                merged = parse.merge_named_node(raw_team)
+                print("Unflattened team_standings node exactly as Yahoo sent it:")
+                print(json.dumps(merged.get("team_standings"), indent=2)[:1500])
+                print("\nAfter flatten_field_list (what parse_standings_snapshot actually reads):")
+                flattened = parse.flatten_field_list(merged.get("team_standings") or {})
+                print(json.dumps(flattened, indent=2)[:1500])
         except Exception as exc:  # noqa: BLE001 - diagnostic only
             print(f"  Failed to parse saved raw response: {exc}")
 

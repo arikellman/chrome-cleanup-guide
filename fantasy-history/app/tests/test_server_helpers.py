@@ -14,8 +14,14 @@ class TestIsRateStat(unittest.TestCase):
             with self.subTest(display_name=display_name):
                 self.assertFalse(_is_rate_stat(display_name, None))
 
-    def test_falls_back_to_name_field(self):
-        self.assertTrue(_is_rate_stat(None, "Team ERA"))
+    def test_ignores_name_field(self):
+        # Confirmed against a real league: substring-matching the full
+        # descriptive `name` field (e.g. "Runs Batted In", "Stolen Bases")
+        # misclassified RBI/SB as rate stats because both contain "ba".
+        # Only the short, reliable display_name is checked now.
+        self.assertFalse(_is_rate_stat("RBI", "Runs Batted In"))
+        self.assertFalse(_is_rate_stat("SB", "Stolen Bases"))
+        self.assertFalse(_is_rate_stat(None, "Team ERA"))
 
     def test_handles_missing_values(self):
         self.assertFalse(_is_rate_stat(None, None))

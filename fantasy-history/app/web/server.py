@@ -25,16 +25,18 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 CATCH_UP_STALE_HOURS = 20
 
 # Heuristic, not an API-provided flag: Yahoo doesn't expose whether a stat
-# category is a counting stat vs. a ratio/rate stat, so this matches
-# common abbreviations to decide whether daily deltas can be summed into
-# a cumulative total (counting stats) or not (rate stats -- see
-# api_stats_timeline for why that distinction matters).
-RATE_STAT_TOKENS = ("era", "whip", "obp", "avg", "ba", "slg", "ops", "fip", "k/9", "bb/9", "k/bb")
+# category is a counting stat vs. a ratio/rate stat. Matched as an EXACT
+# (not substring) comparison against display_name only -- confirmed
+# against a real league that substring-matching the full descriptive
+# `name` field misclassified "Runs Batted In" and "Stolen Bases" as rate
+# stats (both contain "ba"), silently dropping their fully-backfilled
+# daily-delta history down to the single-snapshot-day path meant for
+# actual ratio stats like ERA/WHIP/OBP.
+RATE_STAT_DISPLAY_NAMES = {"era", "whip", "obp", "avg", "ba", "slg", "ops", "fip", "k/9", "bb/9", "k/bb"}
 
 
 def _is_rate_stat(display_name: str | None, name: str | None) -> bool:
-    text = f"{display_name or ''} {name or ''}".lower()
-    return any(token in text for token in RATE_STAT_TOKENS)
+    return (display_name or "").strip().lower() in RATE_STAT_DISPLAY_NAMES
 
 _pull_lock = threading.Lock()
 _pull_running = False
