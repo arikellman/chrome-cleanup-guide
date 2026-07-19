@@ -387,17 +387,30 @@ let standingsChart = null;
 async function renderStandings() {
   const container = document.getElementById("standings-table");
   const data = await api(`/api/standings?season=${state.season}`);
-  const columns = [
-    { key: "rank", label: "Rank" },
-    { key: "name", label: "Team" },
-    { key: "manager_nickname", label: "Manager" },
-    { key: "wins", label: "W" },
-    { key: "losses", label: "L" },
-    { key: "ties", label: "T" },
-    { key: "pct", label: "Pct", render: (r) => fmt(r.pct, 3) },
-    { key: "games_back", label: "GB" },
-    { key: "playoff_seed", label: "Seed" },
-  ];
+  // Roto leagues have no outcome_totals (wins/losses/ties/pct) at all --
+  // confirmed against a real league, Yahoo only sends rank, points_for,
+  // and points_back for roto -- so those columns would always be blank.
+  // Show Yahoo's own roto point total/distance-from-first instead.
+  const columns = isRoto()
+    ? [
+        { key: "rank", label: "Rank" },
+        { key: "name", label: "Team" },
+        { key: "manager_nickname", label: "Manager" },
+        { key: "points_for", label: "Total Pts" },
+        { key: "games_back", label: "Behind" },
+        { key: "playoff_seed", label: "Seed" },
+      ]
+    : [
+        { key: "rank", label: "Rank" },
+        { key: "name", label: "Team" },
+        { key: "manager_nickname", label: "Manager" },
+        { key: "wins", label: "W" },
+        { key: "losses", label: "L" },
+        { key: "ties", label: "T" },
+        { key: "pct", label: "Pct", render: (r) => fmt(r.pct, 3) },
+        { key: "games_back", label: "GB" },
+        { key: "playoff_seed", label: "Seed" },
+      ];
   renderTable(container, columns, data.standings, {
     defaultSort: "rank",
     defaultAsc: true,

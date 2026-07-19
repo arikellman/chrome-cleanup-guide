@@ -113,6 +113,33 @@ class TestTeamParsing(unittest.TestCase):
         self.assertAlmostEqual(rows[0]["pct"], 0.667)
         self.assertEqual(rows[0]["playoff_seed"], 1)
 
+    def test_parse_standings_snapshot_roto_shape(self):
+        # Confirmed against a real roto league: team_standings has no
+        # outcome_totals at all (no wins/losses/ties/pct), and "how far
+        # behind" is named points_back rather than games_back.
+        teams_node = {
+            "0": {
+                "team": [
+                    [{"team_key": "469.l.74647.t.9"}],
+                    {
+                        "team_standings": {
+                            "rank": "1",
+                            "points_for": "107",
+                            "points_change": "-3",
+                            "points_back": "0",
+                        }
+                    },
+                ]
+            },
+            "count": 1,
+        }
+        rows = parse.parse_standings_snapshot(teams_node, 2026, "2026-07-19")
+        self.assertEqual(rows[0]["rank"], 1)
+        self.assertIsNone(rows[0]["wins"])
+        self.assertIsNone(rows[0]["pct"])
+        self.assertEqual(rows[0]["points_for"], 107.0)
+        self.assertEqual(rows[0]["games_back"], "0")
+
     def test_parse_team_stat_snapshots(self):
         teams_node = load("teams_node.json")
         rows = parse.parse_team_stat_snapshots(teams_node, 2024, "2024-07-01")

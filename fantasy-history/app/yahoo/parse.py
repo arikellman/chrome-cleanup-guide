@@ -198,7 +198,11 @@ def parse_standings_snapshot(
                 "losses": _to_int(outcome.get("losses")),
                 "ties": _to_int(outcome.get("ties")),
                 "pct": float(outcome.get("percentage")) if outcome.get("percentage") not in (None, "") else None,
-                "games_back": standings.get("games_back"),
+                # Confirmed against a real roto league: there's no
+                # outcome_totals block at all (no wins/losses/ties/pct),
+                # and the "how far behind" field is named points_back
+                # instead of games_back.
+                "games_back": standings.get("games_back") or standings.get("points_back"),
                 "points_for": _to_float(standings.get("points_for")),
                 "points_against": _to_float(standings.get("points_against")),
                 "playoff_seed": _to_int(standings.get("playoff_seed")),
