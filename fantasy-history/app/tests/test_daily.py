@@ -1,6 +1,23 @@
 import unittest
 
-from app.jobs.daily import find_subresource
+from app.jobs.daily import find_subresource, teams_stats_path
+
+
+class TestTeamsStatsPath(unittest.TestCase):
+    def test_season_type_uses_semicolon_chained_path(self):
+        # Confirmed against a real league: ?out=stats&type=season 400s
+        # with "Invalid subresource stats requested" -- stats must be a
+        # path segment with semicolon-chained modifiers instead.
+        path = teams_stats_path("469.l.74647", {"type": "season"})
+        self.assertEqual(path, "league/469.l.74647/teams/stats;type=season")
+
+    def test_date_type_chains_both_modifiers(self):
+        path = teams_stats_path("469.l.74647", {"type": "date", "date": "2026-03-25"})
+        self.assertEqual(path, "league/469.l.74647/teams/stats;type=date;date=2026-03-25")
+
+    def test_no_params_is_bare_stats_path(self):
+        path = teams_stats_path("469.l.74647", {})
+        self.assertEqual(path, "league/469.l.74647/teams/stats")
 
 
 class TestFindSubresource(unittest.TestCase):

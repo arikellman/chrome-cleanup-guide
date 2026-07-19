@@ -122,12 +122,25 @@ def pull_transactions(client: YahooClient, conn, league_key: str, season_year: i
     database.upsert_transaction_players(conn, [r for r in player_rows if r["transaction_key"] in new_keys])
 
 
+def teams_stats_path(league_key: str, params: dict[str, Any]) -> str:
+    """Confirmed against a real league: unlike the league's own
+    settings/standings sub-resources (selected via an ?out= query
+    parameter), team stats use a different Yahoo convention -- "stats"
+    must be a path segment with its modifiers (type, date, season)
+    semicolon-chained directly onto it, e.g.
+    league/{key}/teams/stats;type=date;date=2026-03-25 -- a plain
+    ?out=stats&type=... query string 400s with "Invalid subresource
+    stats requested"."""
+    modifiers = ";".join(f"{k}={v}" for k, v in params.items())
+    path = f"league/{league_key}/teams/stats"
+    return f"{path};{modifiers}" if modifiers else path
+
+
 def _fetch_teams_node(
     client: YahooClient, conn, league_key: str, season_year: int, params: dict[str, Any]
 ) -> Any:
-    body = client.get(
-        f"league/{league_key}/teams", params={"out": "stats", **params}, season_year=season_year
-    )
+    """Fetches the teams/stats sub-resource for every team in the league at once."""
+    body = client.get(teams_stats_path(league_key, params), season_year=season_year)
     league_list = _league_list(body)
     return find_subresource(league_list, "teams") or {}
 
