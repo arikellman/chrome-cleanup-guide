@@ -92,8 +92,16 @@ def pull_scoreboards(
     for week in range(start_week, end_week + 1):
         if week in already_final:
             continue
+        # Matches the same semicolon-chained-path convention confirmed for
+        # teams/stats (see teams_stats_path) rather than a ?week= query
+        # parameter -- not independently confirmed against a live H2H
+        # league (this user's league is roto, which skips this call
+        # entirely), but it's the same class of endpoint and Yahoo's own
+        # docs show week as a path modifier the same way (team stats;
+        # type=week;week={week}), so this is a reasonable fix ahead of
+        # actually hitting it.
         body = client.get(
-            f"league/{league_key}/scoreboard", params={"week": week}, season_year=season_year, week=week
+            f"league/{league_key}/scoreboard;week={week}", season_year=season_year, week=week
         )
         league_list = _league_list(body)
         scoreboard = find_subresource(league_list, "scoreboard")
