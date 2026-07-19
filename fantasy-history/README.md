@@ -59,6 +59,14 @@ You authenticate with Yahoo **once**. After that it runs unattended forever
    ```
    python -m app backfill --all
    ```
+   This also walks day-by-day through the current season pulling each day's
+   individual stat contribution (Yahoo can answer "what happened on July 18"
+   for any past day even though it can't answer "what were the cumulative
+   totals as of July 18"), so counting-stat trends (HR, RBI, SB, ...) come
+   back fully populated for the whole season immediately, not just from
+   today forward. This makes one API request per day of the season, so it
+   can take a few minutes the first time -- it's resumable, so re-running it
+   only fetches whatever's still missing.
 
 5. Start the dashboard (leave this running -- it pulls daily and catches up
    automatically after sleep/reboot):
@@ -102,7 +110,11 @@ versa, is handled correctly per year):
 - **Categories** -- a day-by-day trend chart of each stat category's running
   season total per team (pick HR, ERA, etc. from the dropdown to see it climb
   or dip over the season), plus per-team win rate across matchups so far as a
-  bar chart and full table.
+  bar chart and full table. Counting stats (HR, RBI, SB, ...) show the whole
+  season immediately after backfill, reconstructed day by day; rate stats
+  (ERA, WHIP, OBP, ...) can't be reconstructed that way (a day's ratio isn't
+  summable into a season ratio) so those only show history from whenever
+  this app started running.
 - **Transactions** -- add/drop/trade log, filterable by team, type, and player
   name search.
 - **History** -- one row per season showing final standings once Yahoo marks

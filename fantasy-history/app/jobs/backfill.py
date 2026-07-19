@@ -53,12 +53,81 @@ def backfill_season(client: YahooClient, conn, league_key: str, season_year: int
         logger.exception("backfill team stat snapshot failed for %s", league_key)
         errors.append(f"{season_year} team_stat_snapshots: {exc}")
 
+    errors.extend(backfill_daily_stat_deltas(client, conn, league_key, season_year, season_row))
+
     try:
         daily.maybe_write_final_standings(conn, season_row)
         conn.commit()
     except Exception as exc:  # noqa: BLE001
         logger.exception("backfill final standings failed for %s", league_key)
         errors.append(f"{season_year} final_standings: {exc}")
+
+    return errors
+
+
+def season_backfill_date_range(season_row: dict[str, Any], today: dt.date | None = None) -> tuple[dt.date, dt.date] | None:
+    """Pure helper: the [start_date, end_date] range to backfill daily stat
+    deltas for, clamped so we never request a future date. Returns None if
+    the season has no usable start_date, or if start is already past the
+    clamped end (nothing to do)."""
+    today = today or dt.date.today()
+    start_date_str = season_row.get("start_date")
+    if not start_date_str:
+        return None
+    try:
+        start_date = dt.date.fromisoformat(start_date_str)
+    except ValueError:
+        return None
+
+    end_date = today
+    end_date_str = season_row.get("end_date")
+    if end_date_str:
+        try:
+            end_date = min(dt.date.fromisoformat(end_date_str), today)
+        except ValueError:
+            pass
+
+    if start_date > end_date:
+        return None
+    return start_date, end_date
+
+
+def backfill_daily_stat_deltas(
+    client: YahooClient, conn, league_key: str, season_year: int, season_row: dict[str, Any]
+) -> list[str]:
+    """Loops day-by-day over the season pulling each day's individual stat
+    contribution (Yahoo's type=date team stats). Unlike the cumulative
+    season total (only ever available "as of right now"), Yahoo can answer
+    "what happened on day X" for any past day, so this recovers full
+    within-season daily history retroactively instead of only building up
+    from whenever this app started running. Resumable: dates already
+    stored are skipped, so a second run only fetches what's missing.
+    """
+    errors: list[str] = []
+    date_range = season_backfill_date_range(season_row)
+    if date_range is None:
+        return errors
+    start_date, end_date = date_range
+
+    already = database.stored_daily_stat_delta_dates(conn, season_year)
+    total_days = (end_date - start_date).days + 1
+    processed = 0
+    current = start_date
+    while current <= end_date:
+        date_str = current.isoformat()
+        if date_str not in already:
+            try:
+                daily.pull_team_daily_stat_deltas(client, conn, league_key, season_year, date_str)
+                conn.commit()
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("backfill daily stat delta failed for %s on %s", league_key, date_str)
+                errors.append(f"{season_year} daily_stat_delta {date_str}: {exc}")
+        processed += 1
+        if processed % 20 == 0:
+            logger.info(
+                "Daily stat delta backfill: %s/%s days done for season %s", processed, total_days, season_year
+            )
+        current += dt.timedelta(days=1)
 
     return errors
 

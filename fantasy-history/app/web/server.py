@@ -24,6 +24,18 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CATCH_UP_STALE_HOURS = 20
 
+# Heuristic, not an API-provided flag: Yahoo doesn't expose whether a stat
+# category is a counting stat vs. a ratio/rate stat, so this matches
+# common abbreviations to decide whether daily deltas can be summed into
+# a cumulative total (counting stats) or not (rate stats -- see
+# api_stats_timeline for why that distinction matters).
+RATE_STAT_TOKENS = ("era", "whip", "obp", "avg", "ba", "slg", "ops", "fip", "k/9", "bb/9", "k/bb")
+
+
+def _is_rate_stat(display_name: str | None, name: str | None) -> bool:
+    text = f"{display_name or ''} {name or ''}".lower()
+    return any(token in text for token in RATE_STAT_TOKENS)
+
 _pull_lock = threading.Lock()
 _pull_running = False
 
@@ -362,33 +374,70 @@ def create_app() -> Flask:
     @app.route("/api/stats/timeline")
     def api_stats_timeline():
         """Day-by-day cumulative value of one stat category per team, so
-        within-season trends (not just weekly matchup results) are visible."""
+        within-season trends (not just weekly matchup results) are visible.
+
+        Counting stats (HR, RBI, SB, ...) are reconstructed as a running
+        sum of team_daily_stat_deltas, which covers the whole season once
+        backfilled -- retroactively, not just from whenever this app
+        started running. Rate stats (ERA, WHIP, OBP, ...) can't be summed
+        that way (a ratio of ratios isn't the season ratio), so those fall
+        back to team_stat_snapshots, which only has coverage starting from
+        whenever pulls began."""
         conn = get_db()
         season = request.args.get("season", type=int) or _latest_season(conn)
         stat_id = request.args.get("stat_id", type=int)
         if season is None or stat_id is None:
             return jsonify({"season": season, "stat_id": stat_id, "teams": {}})
 
-        rows = _rows(
-            conn.execute(
-                """
-                SELECT tss.snapshot_date, tss.team_key, tss.value, t.name
-                FROM team_stat_snapshots tss
-                JOIN teams t ON t.team_key = tss.team_key
-                WHERE tss.season_year = ? AND tss.stat_id = ?
-                ORDER BY tss.snapshot_date ASC
-                """,
-                (season, stat_id),
-            )
-        )
+        cat = conn.execute(
+            "SELECT display_name, name FROM stat_categories WHERE season_year = ? AND stat_id = ?",
+            (season, stat_id),
+        ).fetchone()
+        rate_stat = _is_rate_stat(cat["display_name"] if cat else None, cat["name"] if cat else None)
+
         teams: dict[str, dict[str, Any]] = {}
-        for r in rows:
-            entry = teams.setdefault(r["team_key"], {"name": r["name"], "points": []})
-            try:
-                value = float(r["value"])
-            except (TypeError, ValueError):
-                continue
-            entry["points"].append({"date": r["snapshot_date"], "value": value})
+        if rate_stat:
+            rows = _rows(
+                conn.execute(
+                    """
+                    SELECT tss.snapshot_date, tss.team_key, tss.value, t.name
+                    FROM team_stat_snapshots tss
+                    JOIN teams t ON t.team_key = tss.team_key
+                    WHERE tss.season_year = ? AND tss.stat_id = ?
+                    ORDER BY tss.snapshot_date ASC
+                    """,
+                    (season, stat_id),
+                )
+            )
+            for r in rows:
+                entry = teams.setdefault(r["team_key"], {"name": r["name"], "points": []})
+                try:
+                    value = float(r["value"])
+                except (TypeError, ValueError):
+                    continue
+                entry["points"].append({"date": r["snapshot_date"], "value": value})
+        else:
+            rows = _rows(
+                conn.execute(
+                    """
+                    SELECT tds.snapshot_date, tds.team_key, tds.value, t.name
+                    FROM team_daily_stat_deltas tds
+                    JOIN teams t ON t.team_key = tds.team_key
+                    WHERE tds.season_year = ? AND tds.stat_id = ?
+                    ORDER BY tds.team_key, tds.snapshot_date ASC
+                    """,
+                    (season, stat_id),
+                )
+            )
+            running_totals: dict[str, float] = {}
+            for r in rows:
+                entry = teams.setdefault(r["team_key"], {"name": r["name"], "points": []})
+                try:
+                    delta = float(r["value"])
+                except (TypeError, ValueError):
+                    continue
+                running_totals[r["team_key"]] = running_totals.get(r["team_key"], 0.0) + delta
+                entry["points"].append({"date": r["snapshot_date"], "value": running_totals[r["team_key"]]})
         return jsonify({"season": season, "stat_id": stat_id, "teams": teams})
 
     @app.route("/api/transactions")

@@ -85,6 +85,19 @@ def insert_team_stat_snapshots(conn: sqlite3.Connection, rows: Iterable[dict[str
         _upsert(conn, "team_stat_snapshots", row, ["snapshot_date", "team_key", "stat_id"])
 
 
+def insert_team_daily_stat_deltas(conn: sqlite3.Connection, rows: Iterable[dict[str, Any]]) -> None:
+    for row in rows:
+        _upsert(conn, "team_daily_stat_deltas", row, ["snapshot_date", "team_key", "stat_id"])
+
+
+def stored_daily_stat_delta_dates(conn: sqlite3.Connection, season_year: int) -> set[str]:
+    rows = conn.execute(
+        "SELECT DISTINCT snapshot_date FROM team_daily_stat_deltas WHERE season_year = ?",
+        (season_year,),
+    ).fetchall()
+    return {r["snapshot_date"] for r in rows}
+
+
 def upsert_transaction(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     _upsert(conn, "transactions", row, ["transaction_key"])
 

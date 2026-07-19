@@ -113,16 +113,36 @@ def pull_transactions(client: YahooClient, conn, league_key: str, season_year: i
     database.upsert_transaction_players(conn, [r for r in player_rows if r["transaction_key"] in new_keys])
 
 
+def _fetch_teams_node(
+    client: YahooClient, conn, league_key: str, season_year: int, params: dict[str, Any]
+) -> Any:
+    body = client.get(
+        f"league/{league_key}/teams", params={"out": "stats", **params}, season_year=season_year
+    )
+    league_list = _league_list(body)
+    return find_subresource(league_list, "teams") or {}
+
+
 def pull_team_stat_snapshots(
     client: YahooClient, conn, league_key: str, season_year: int, snapshot_date: str
 ) -> None:
-    body = client.get(
-        f"league/{league_key}/teams", params={"out": "stats", "type": "season"}, season_year=season_year
-    )
-    league_list = _league_list(body)
-    teams_node = find_subresource(league_list, "teams") or {}
+    teams_node = _fetch_teams_node(client, conn, league_key, season_year, {"type": "season"})
     rows = parse.parse_team_stat_snapshots(teams_node, season_year, snapshot_date)
     database.insert_team_stat_snapshots(conn, rows)
+
+
+def pull_team_daily_stat_deltas(
+    client: YahooClient, conn, league_key: str, season_year: int, game_date: str
+) -> None:
+    """Pulls that SINGLE day's stat contribution per team (Yahoo's
+    type=date team stats), not the season-cumulative total. Unlike the
+    cumulative total, this can be requested for any past day, which is
+    what makes retroactive full-season backfill possible."""
+    teams_node = _fetch_teams_node(
+        client, conn, league_key, season_year, {"type": "date", "date": game_date}
+    )
+    rows = parse.parse_team_stat_snapshots(teams_node, season_year, game_date)
+    database.insert_team_daily_stat_deltas(conn, rows)
 
 
 def maybe_write_final_standings(conn, season_row: dict[str, Any]) -> None:
@@ -203,6 +223,13 @@ def run_daily_pull(kind: str = "daily") -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             logger.exception("team stat snapshot pull failed")
             errors.append(f"team_stat_snapshots: {exc}")
+
+        try:
+            pull_team_daily_stat_deltas(client, conn, league_key, season_year, snapshot_date)
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("team daily stat delta pull failed")
+            errors.append(f"team_daily_stat_deltas: {exc}")
 
         if season_row:
             try:

@@ -107,6 +107,26 @@ CREATE TABLE IF NOT EXISTS team_stat_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_team_stat_snapshots_season ON team_stat_snapshots(season_year, stat_id);
 
+-- One row per (day, team, stat) representing that SINGLE day's individual
+-- contribution to the category (e.g. "3 home runs on July 18"), fetched
+-- via Yahoo's type=date team stats, as opposed to team_stat_snapshots
+-- which holds the season-cumulative-to-date total as of a pull. Because
+-- Yahoo can answer "what happened on day X" for any past day (unlike the
+-- cumulative total, which is only ever "as of right now"), this table can
+-- be backfilled for the entire season retroactively, not just from
+-- whenever this app started running. snapshot_date here means "the date
+-- this stat contribution occurred", reusing the same row shape as
+-- team_stat_snapshots so the same parser can produce both.
+CREATE TABLE IF NOT EXISTS team_daily_stat_deltas (
+    snapshot_date TEXT NOT NULL,
+    season_year INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    stat_id INTEGER NOT NULL,
+    value TEXT,
+    PRIMARY KEY (snapshot_date, team_key, stat_id)
+);
+CREATE INDEX IF NOT EXISTS idx_team_daily_stat_deltas_season ON team_daily_stat_deltas(season_year, stat_id);
+
 CREATE TABLE IF NOT EXISTS transactions (
     transaction_key TEXT PRIMARY KEY,
     season_year INTEGER NOT NULL,
