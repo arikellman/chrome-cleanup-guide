@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
+import urllib.parse
 from typing import Any
 
 import requests
@@ -27,6 +28,16 @@ TIMEOUT = 30
 
 class YahooAPIError(RuntimeError):
     pass
+
+
+def build_query_string(query: dict[str, Any]) -> str:
+    """requests' default query-string encoding percent-encodes commas
+    (out=settings%2Cstandings), which Yahoo's API rejects with a 400
+    ("Invalid subresource ... requested") -- it only accepts the literal
+    comma in out=settings,standings. Build the query string with commas
+    left unescaped so it can be handed to requests as a pre-encoded
+    string (bypassing its own re-encoding)."""
+    return urllib.parse.urlencode(query, safe=",")
 
 
 class YahooClient:
@@ -51,6 +62,7 @@ class YahooClient:
         url = f"{BASE_URL}/{path.lstrip('/')}"
         query = dict(params or {})
         query.setdefault("format", "json")
+        query_string = build_query_string(query)
 
         force_refresh = False
         last_error: Exception | None = None
@@ -61,7 +73,7 @@ class YahooClient:
                 self._last_request_at = time.monotonic()
                 resp = self.session.get(
                     url,
-                    params=query,
+                    params=query_string,
                     headers={"Authorization": f"Bearer {token}"},
                     timeout=TIMEOUT,
                 )
