@@ -168,7 +168,15 @@ def cmd_status(_args: argparse.Namespace) -> None:
     conn = database.get_connection()
     last = database.last_successful_fetch(conn)
     print(f"Last good pull:  {last['run_finished_at'] if last else 'never'}")
-    for table in ("seasons", "teams", "matchups", "standings_snapshots", "transactions"):
+    for table in (
+        "seasons",
+        "teams",
+        "matchups",
+        "standings_snapshots",
+        "team_stat_snapshots",
+        "team_daily_stat_deltas",
+        "transactions",
+    ):
         count = conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"]
         print(f"  {table}: {count} rows")
     conn.close()
