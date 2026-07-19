@@ -34,13 +34,22 @@ def _to_int(value: Any) -> int | None:
 def find_subresource(league_list: list[Any], key: str) -> Any:
     """League/team sub-resources Yahoo requested via `out=` come back as
     extra elements like {"settings": [...]} or {"standings": [...]}
-    appended after the flat/field-list first element."""
+    appended after the flat/field-list first element.
+
+    The unwrapped value is passed through flatten_field_list, since some
+    sub-resources (confirmed for "settings" against a real league) use the
+    same "list of single-key dicts to merge" shape as team/league fields
+    rather than a plain dict. flatten_field_list is a safe no-op passthrough
+    for sub-resources that are already a plain dict (e.g. standings,
+    scoreboard), so this is applied unconditionally rather than guessed
+    per sub-resource.
+    """
     for item in league_list[1:]:
         if isinstance(item, dict) and key in item:
             value = item[key]
             if isinstance(value, list) and len(value) == 1:
-                return value[0]
-            return value
+                value = value[0]
+            return parse.flatten_field_list(value)
     return {}
 
 
