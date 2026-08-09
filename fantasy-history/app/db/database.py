@@ -27,7 +27,38 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+# Columns added to pre-existing tables after their initial release.
+# "CREATE TABLE IF NOT EXISTS" in schema.sql is a no-op against a database
+# file that already has the table, so a fresh column added there (e.g. the
+# manager_key/faab_balance/... additions on teams) would otherwise never
+# get added to anyone's existing fantasy.db -- and the CREATE INDEX further
+# down schema.sql that references it would then fail outright. Each entry
+# here is applied with ALTER TABLE ADD COLUMN before the schema script
+# runs, and is a no-op once already applied.
+_COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
+    ("teams", "manager_key", "TEXT"),
+    ("teams", "faab_balance", "INTEGER"),
+    ("teams", "waiver_priority", "INTEGER"),
+    ("teams", "number_of_moves", "INTEGER"),
+    ("teams", "number_of_trades", "INTEGER"),
+]
+
+
+def _apply_column_migrations(conn: sqlite3.Connection) -> None:
+    existing_tables = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    for table, column, col_type in _COLUMN_MIGRATIONS:
+        if table not in existing_tables:
+            continue  # fresh install: schema.sql's CREATE TABLE already includes this column
+        columns = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+    conn.commit()
+
+
 def init_db(conn: sqlite3.Connection) -> None:
+    _apply_column_migrations(conn)
     with open(SCHEMA_PATH, "r") as f:
         conn.executescript(f.read())
     conn.commit()
