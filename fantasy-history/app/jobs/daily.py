@@ -79,6 +79,12 @@ def pull_settings_and_standings(
     teams_node = teams_node or {}
     team_rows = parse.parse_teams(teams_node, season_year)
     database.upsert_teams(conn, team_rows)
+    manager_rows = [
+        {"manager_key": t["manager_key"], "display_nickname": t.get("manager_nickname")}
+        for t in team_rows
+        if t.get("manager_key")
+    ]
+    database.upsert_managers(conn, manager_rows)
     snapshot_rows = parse.parse_standings_snapshot(teams_node, season_year, snapshot_date)
     database.insert_standings_snapshot(conn, snapshot_rows)
 
@@ -115,7 +121,35 @@ def pull_transactions(client: YahooClient, conn, league_key: str, season_year: i
     body = client.get(f"league/{league_key}/transactions", season_year=season_year)
     league_list = _league_list(body)
     transactions_node = find_subresource(league_list, "transactions")
+    reported_count = _to_int(
+        transactions_node.get("count") if isinstance(transactions_node, dict) else None
+    )
     tx_rows, player_rows = parse.parse_transactions(transactions_node, season_year)
+
+    # Hardening: Yahoo's transactions collection wrapper reports a total
+    # "count" that can exceed what a single page returns (the default page
+    # size is commonly 25, UNVERIFIED against a live league since this
+    # sandbox's league so far always fits on page 1). If the first page's
+    # unwrapped item count falls short of the wrapper's own reported
+    # count, keep fetching count=25;start={offset} pages -- the same
+    # semicolon-chained-path convention already confirmed correct for
+    # teams/stats -- merging results, until we reach the reported total or
+    # an empty page comes back. A no-op when page 1 already has everything.
+    if reported_count is not None and len(tx_rows) < reported_count:
+        offset = len(tx_rows)
+        while offset < reported_count:
+            page_body = client.get(
+                f"league/{league_key}/transactions;count=25;start={offset}",
+                season_year=season_year,
+            )
+            page_list = _league_list(page_body)
+            page_node = find_subresource(page_list, "transactions")
+            page_tx_rows, page_player_rows = parse.parse_transactions(page_node, season_year)
+            if not page_tx_rows:
+                break
+            tx_rows.extend(page_tx_rows)
+            player_rows.extend(page_player_rows)
+            offset += len(page_tx_rows)
 
     existing = {
         r["transaction_key"]
@@ -128,6 +162,19 @@ def pull_transactions(client: YahooClient, conn, league_key: str, season_year: i
         database.upsert_transaction(conn, row)
     new_keys = {r["transaction_key"] for r in new_tx}
     database.upsert_transaction_players(conn, [r for r in player_rows if r["transaction_key"] in new_keys])
+
+
+def pull_draft_results(client: YahooClient, conn, league_key: str, season_year: int) -> None:
+    """Pulls `league/{league_key}/draftresults`. UNVERIFIED against a live
+    league -- see parse.parse_draft_results docstring. Drafts are a
+    one-time event per season so this is safe to call from backfill (and
+    re-running just overwrites the same (season_year, pick) rows via
+    upsert)."""
+    body = client.get(f"league/{league_key}/draftresults", season_year=season_year)
+    league_list = _league_list(body)
+    draft_results_node = find_subresource(league_list, "draft_results")
+    rows = parse.parse_draft_results(draft_results_node, season_year)
+    database.upsert_draft_picks(conn, rows)
 
 
 def teams_stats_path(league_key: str, params: dict[str, Any]) -> str:

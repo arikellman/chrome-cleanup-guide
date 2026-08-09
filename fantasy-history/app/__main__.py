@@ -270,6 +270,84 @@ def cmd_diagnose(_args: argparse.Namespace) -> None:
         except Exception as exc:  # noqa: BLE001 - diagnostic only
             print(f"  Failed to parse saved raw response: {exc}")
 
+    other_seasons = [
+        r["season_year"]
+        for r in conn.execute(
+            "SELECT DISTINCT season_year FROM seasons WHERE season_year != ? ORDER BY season_year",
+            (season_year,),
+        ).fetchall()
+    ]
+    if other_seasons:
+        print(f"\n(Other seasons also present in `seasons` table: {other_seasons})")
+
+    print(f"\n=== draft_picks (season {season_year}) ===")
+    draft_count = conn.execute(
+        "SELECT COUNT(*) AS c FROM draft_picks WHERE season_year = ?", (season_year,)
+    ).fetchone()["c"]
+    print(f"  {draft_count} rows")
+    if not draft_count:
+        print("  (no draft picks -- draftresults pull never succeeded, or backfill hasn't run)")
+
+    print(f"\n=== team budget/moves fields (season {season_year}) ===")
+    field_counts = conn.execute(
+        "SELECT "
+        "  SUM(CASE WHEN faab_balance IS NOT NULL THEN 1 ELSE 0 END) AS faab, "
+        "  SUM(CASE WHEN waiver_priority IS NOT NULL THEN 1 ELSE 0 END) AS waiver, "
+        "  SUM(CASE WHEN number_of_moves IS NOT NULL THEN 1 ELSE 0 END) AS moves, "
+        "  SUM(CASE WHEN number_of_trades IS NOT NULL THEN 1 ELSE 0 END) AS trades, "
+        "  COUNT(*) AS total "
+        "FROM teams WHERE season_year = ?",
+        (season_year,),
+    ).fetchone()
+    print(
+        f"  of {field_counts['total']} teams: faab_balance={field_counts['faab']}  "
+        f"waiver_priority={field_counts['waiver']}  number_of_moves={field_counts['moves']}  "
+        f"number_of_trades={field_counts['trades']}"
+    )
+
+    print(f"\n=== transactions: DB count vs. last raw pull's reported count (season {season_year}) ===")
+    db_tx_count = conn.execute(
+        "SELECT COUNT(*) AS c FROM transactions WHERE season_year = ?", (season_year,)
+    ).fetchone()["c"]
+    reported_count = None
+    raw_tx = conn.execute(
+        "SELECT body_json FROM raw_responses WHERE endpoint LIKE 'league/%/transactions%' "
+        "AND season_year = ? ORDER BY fetched_at DESC LIMIT 1",
+        (season_year,),
+    ).fetchone()
+    if raw_tx:
+        try:
+            tx_body = json.loads(raw_tx["body_json"])
+            tx_league_list = tx_body["fantasy_content"]["league"]
+            for item in tx_league_list[1:]:
+                if isinstance(item, dict) and "transactions" in item:
+                    tx_node = item["transactions"]
+                    if isinstance(tx_node, list) and tx_node:
+                        tx_node = tx_node[0]
+                    if isinstance(tx_node, dict):
+                        reported_count = _to_int(tx_node.get("count"))
+                    break
+        except Exception:  # noqa: BLE001 - diagnostic only
+            pass
+    print(f"  DB rows: {db_tx_count}   last pull's wrapper 'count': {reported_count}")
+    if reported_count is not None and db_tx_count < reported_count:
+        print("  <- DB has fewer transactions than the wrapper reported; pagination may need attention")
+
+    print(f"\n=== manager identity (season {season_year}) ===")
+    manager_rows = conn.execute(
+        "SELECT team_key, manager_key, manager_guid, manager_nickname FROM teams "
+        "WHERE season_year = ? ORDER BY team_key",
+        (season_year,),
+    ).fetchall()
+    if not manager_rows:
+        print("  (no teams rows)")
+    for r in manager_rows:
+        hidden = str(r["manager_guid"]).strip().lower() == "--hidden--" if r["manager_guid"] else False
+        print(
+            f"  {r['team_key']:<24} manager_key={r['manager_key'] or '-':<20} "
+            f"nickname={r['manager_nickname'] or '-':<15} guid_hidden={hidden}"
+        )
+
     conn.close()
 
 

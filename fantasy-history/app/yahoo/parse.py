@@ -155,6 +155,22 @@ def _flatten_team_node(raw_team: Any) -> dict[str, Any]:
     return merged
 
 
+def resolve_manager_key(guid: Any, nickname: Any) -> str | None:
+    """Yahoo returns the literal string "--hidden--" for the guid of
+    managers other than the authenticated user (confirmed behavior per
+    Yahoo's docs; this app has no way to verify the exact literal against
+    a live league since only the requesting user's own guid is ever real
+    in a sandbox pull). When guid is missing or hidden, fall back to a
+    normalized (lowercased, whitespace-collapsed) nickname so managers can
+    still be identified/deduped across pulls; returns None if neither is
+    usable."""
+    if guid and str(guid).strip() and str(guid).strip().lower() != "--hidden--":
+        return str(guid).strip()
+    if nickname and str(nickname).strip():
+        return "nick:" + " ".join(str(nickname).strip().lower().split())
+    return None
+
+
 def parse_teams(teams_node: Any, season_year: int) -> list[dict[str, Any]]:
     rows = []
     for item in unwrap_collection(teams_node):
@@ -169,7 +185,16 @@ def parse_teams(teams_node: Any, season_year: int) -> list[dict[str, Any]]:
                 "logo_url": team.get("_logo_url"),
                 "manager_nickname": team.get("_manager_nickname"),
                 "manager_guid": team.get("_manager_guid"),
+                "manager_key": resolve_manager_key(team.get("_manager_guid"), team.get("_manager_nickname")),
                 "division_id": team.get("division_id"),
+                # Plain scalars off the merged team fields dict, same as
+                # division_id above -- these 4 are commonly-documented
+                # Yahoo team fields but have not been confirmed present in
+                # this exact form against a live league.
+                "faab_balance": _to_int(team.get("faab_balance")),
+                "waiver_priority": _to_int(team.get("waiver_priority")),
+                "number_of_moves": _to_int(team.get("number_of_moves")),
+                "number_of_trades": _to_int(team.get("number_of_trades")),
             }
         )
     return rows
@@ -391,3 +416,34 @@ def parse_transactions(transactions_node: Any, season_year: int) -> tuple[list[d
             )
 
     return tx_rows, player_rows
+
+
+# ---------------------------------------------------------------------
+# Draft results
+# ---------------------------------------------------------------------
+
+def parse_draft_results(draft_results_node: Any, season_year: int) -> list[dict[str, Any]]:
+    """Parses `league/{league_key}/draftresults`. UNVERIFIED against a live
+    league: this assumes Yahoo's draft_results collection follows the same
+    "list of single-key dicts to merge" convention as every other resource
+    (draft_result: {pick, round, team_key, player_key, cost}), with `cost`
+    present only for auction-type drafts and absent/empty for snake
+    drafts. Player names are intentionally NOT resolved here -- only
+    player_key is stored, per spec."""
+    rows = []
+    for item in unwrap_collection(draft_results_node):
+        raw = item.get("draft_result", item) if isinstance(item, dict) else item
+        result = merge_named_node(raw) if isinstance(raw, list) else raw
+        if not isinstance(result, dict):
+            continue
+        rows.append(
+            {
+                "season_year": season_year,
+                "pick": _to_int(result.get("pick")),
+                "round": _to_int(result.get("round")),
+                "team_key": result.get("team_key"),
+                "player_key": result.get("player_key"),
+                "cost": _to_int(result.get("cost")),
+            }
+        )
+    return rows

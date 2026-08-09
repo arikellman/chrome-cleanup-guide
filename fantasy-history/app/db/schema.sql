@@ -44,10 +44,32 @@ CREATE TABLE IF NOT EXISTS teams (
     logo_url TEXT,
     manager_nickname TEXT,
     manager_guid TEXT,
-    division_id TEXT
+    manager_key TEXT,         -- FK-ish to managers.manager_key (guid, or a
+                               -- "nick:<lowercased nickname>" fallback when
+                               -- guid is missing/hidden -- see
+                               -- parse.resolve_manager_key)
+    division_id TEXT,
+    -- Plain team-level fields Yahoo documents but this app previously
+    -- discarded; populated from the same teams/standings pull, no new API
+    -- call. UNVERIFIED field names against a live league.
+    faab_balance INTEGER,
+    waiver_priority INTEGER,
+    number_of_moves INTEGER,
+    number_of_trades INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_teams_season ON teams(season_year);
 CREATE INDEX IF NOT EXISTS idx_teams_manager_guid ON teams(manager_guid);
+CREATE INDEX IF NOT EXISTS idx_teams_manager_key ON teams(manager_key);
+
+-- One row per distinct manager, keyed by guid when Yahoo returns a real
+-- one, or a normalized-nickname fallback when guid comes back as the
+-- literal "--hidden--" (Yahoo hides other managers' guids from a pull
+-- made as a non-admin/non-commissioner user; UNVERIFIED exact literal
+-- against a live league response).
+CREATE TABLE IF NOT EXISTS managers (
+    manager_key TEXT PRIMARY KEY,
+    display_nickname TEXT
+);
 
 CREATE TABLE IF NOT EXISTS matchups (
     matchup_id TEXT PRIMARY KEY,   -- synthetic: f"{season_year}:{week}:{team1_key}:{team2_key}"
@@ -146,6 +168,20 @@ CREATE TABLE IF NOT EXISTS transaction_players (
     dest_team_key TEXT,
     PRIMARY KEY (transaction_key, player_key, movement)
 );
+
+-- One row per draft pick, from `league/{league_key}/draftresults`.
+-- player_key only -- names are intentionally not resolved here. cost is
+-- nullable because it only applies to auction-type drafts.
+CREATE TABLE IF NOT EXISTS draft_picks (
+    season_year INTEGER NOT NULL,
+    pick INTEGER NOT NULL,
+    round INTEGER,
+    team_key TEXT,
+    player_key TEXT,
+    cost INTEGER,
+    PRIMARY KEY (season_year, pick)
+);
+CREATE INDEX IF NOT EXISTS idx_draft_picks_team ON draft_picks(team_key);
 
 CREATE TABLE IF NOT EXISTS final_standings (
     season_year INTEGER NOT NULL,

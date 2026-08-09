@@ -112,6 +112,16 @@ def upsert_final_standings(conn: sqlite3.Connection, rows: Iterable[dict[str, An
         _upsert(conn, "final_standings", row, ["season_year", "team_key"])
 
 
+def upsert_draft_picks(conn: sqlite3.Connection, rows: Iterable[dict[str, Any]]) -> None:
+    for row in rows:
+        _upsert(conn, "draft_picks", row, ["season_year", "pick"])
+
+
+def upsert_managers(conn: sqlite3.Connection, rows: Iterable[dict[str, Any]]) -> None:
+    for row in rows:
+        _upsert(conn, "managers", row, ["manager_key"])
+
+
 def save_raw_response(
     conn: sqlite3.Connection,
     endpoint: str,

@@ -200,5 +200,74 @@ class TestTransactionParsing(unittest.TestCase):
         self.assertEqual(dropped["source_team_key"], "458.l.12345.t.1")
 
 
+class TestDraftResultsParsing(unittest.TestCase):
+    def test_parse_draft_results(self):
+        node = load("draft_results.json")
+        rows = parse.parse_draft_results(node, 2024)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["pick"], 1)
+        self.assertEqual(rows[0]["round"], 1)
+        self.assertEqual(rows[0]["team_key"], "458.l.12345.t.1")
+        self.assertEqual(rows[0]["player_key"], "458.p.1000")
+        self.assertIsNone(rows[0]["cost"])
+        self.assertEqual(rows[1]["cost"], 5)
+
+
+class TestResolveManagerKey(unittest.TestCase):
+    def test_real_guid_used_as_is(self):
+        self.assertEqual(parse.resolve_manager_key("GUID1", "Ari"), "GUID1")
+
+    def test_hidden_guid_falls_back_to_nickname(self):
+        self.assertEqual(parse.resolve_manager_key("--hidden--", "Sam Jones"), "nick:sam jones")
+
+    def test_hidden_guid_case_insensitive(self):
+        self.assertEqual(parse.resolve_manager_key("--HIDDEN--", "Sam"), "nick:sam")
+
+    def test_missing_guid_falls_back_to_nickname(self):
+        self.assertEqual(parse.resolve_manager_key(None, "  Sam  Jones "), "nick:sam jones")
+
+    def test_no_guid_no_nickname_returns_none(self):
+        self.assertIsNone(parse.resolve_manager_key(None, None))
+        self.assertIsNone(parse.resolve_manager_key("--hidden--", None))
+
+
+class TestTeamBudgetFields(unittest.TestCase):
+    def test_parse_teams_includes_budget_and_manager_key(self):
+        teams_node = load("teams_node.json")
+        rows = parse.parse_teams(teams_node, 2024)
+        self.assertEqual(rows[0]["manager_key"], "GUID1")
+        # teams_node.json has no faab_balance/waiver_priority/etc, so these
+        # should come back None rather than raising.
+        self.assertIsNone(rows[0]["faab_balance"])
+        self.assertIsNone(rows[0]["waiver_priority"])
+        self.assertIsNone(rows[0]["number_of_moves"])
+        self.assertIsNone(rows[0]["number_of_trades"])
+
+    def test_parse_teams_reads_present_budget_fields(self):
+        teams_node = {
+            "0": {
+                "team": [
+                    [
+                        {"team_key": "458.l.12345.t.1"},
+                        {"team_id": "1"},
+                        {"name": "Bash Brothers"},
+                        {"faab_balance": "37"},
+                        {"waiver_priority": "4"},
+                        {"number_of_moves": "12"},
+                        {"number_of_trades": "1"},
+                        {"managers": {"0": {"manager": {"nickname": "Ari", "guid": "--hidden--"}}, "count": 1}},
+                    ]
+                ]
+            },
+            "count": 1,
+        }
+        rows = parse.parse_teams(teams_node, 2024)
+        self.assertEqual(rows[0]["faab_balance"], 37)
+        self.assertEqual(rows[0]["waiver_priority"], 4)
+        self.assertEqual(rows[0]["number_of_moves"], 12)
+        self.assertEqual(rows[0]["number_of_trades"], 1)
+        self.assertEqual(rows[0]["manager_key"], "nick:ari")
+
+
 if __name__ == "__main__":
     unittest.main()
