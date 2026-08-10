@@ -221,7 +221,24 @@ def paginate_by_click(
                     f"Redirected to Yahoo login while fetching {url}. "
                     "Session expired or was revoked -- run: python -m app scrape-auth"
                 )
-            page.wait_for_selector(row_selector, timeout=20000)
+            # Confirmed against a real live --all-seasons run: an older
+            # season's page can come back with NO matching content at all
+            # (structure mismatch, or a genuinely empty transaction
+            # history for that season) -- that crashed the whole
+            # --all-seasons walk before this was caught, exactly the same
+            # class of "timeout isn't necessarily an error" case fetch_page
+            # already handles. Return the single (contentless) page rather
+            # than raising, so the caller's parser -- which returns an
+            # empty list on no rows -- is the one to decide that's fine.
+            try:
+                page.wait_for_selector(row_selector, timeout=20000)
+            except Exception:  # noqa: BLE001 - see comment above
+                logger.warning(
+                    "paginate_by_click: row_selector %r never appeared/became visible on %s "
+                    "(may just mean no matching content) -- returning current page content",
+                    row_selector, url,
+                )
+                return [page.content()]
             for _ in range(max_pages):
                 pages_html.append(page.content())
                 first_row_before = page.locator(row_selector).first.inner_text()
