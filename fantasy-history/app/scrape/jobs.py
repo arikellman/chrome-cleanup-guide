@@ -312,27 +312,23 @@ def scrape_pull_transactions(
 ) -> dict[str, Any]:
     """Fetches and ingests every transactions page for this league.
 
-    Pagination mechanism -- UNVERIFIED LIVE, decision tree in priority
-    order (each step's assumption documented since none of it could be
-    exercised against a real Yahoo session in this sandbox):
+    Pagination mechanism -- decision tree in priority order:
 
-      1. Try `count=1000` directly in the URL. If Yahoo just honors a
-         bigger `count=` the way it does for the API's `teams/stats`
-         path (confirmed there, NOT confirmed for this HTML page), this
-         single fetch returns everything and we're done. Detected by
-         checking whether the returned page's row count exceeds 25 (the
-         page's own default/observed page size).
-      2. If (1) didn't yield more than 25 rows, try a `start=` offset
-         (`count=25&start=25` for page 2, etc.), comparing each page's
-         first row against the previous page's to confirm Yahoo is
-         actually honoring the offset (rather than silently re-serving
-         page 1). This mirrors the same semicolon-path convention
-         app/jobs/daily.py already confirmed works for the API's
+      1. Start from `count=25` -- the exact URL/params confirmed to render
+         real rows in a live run (an earlier speculative `count=1000`
+         first attempt came back with an EMPTY, hidden table live --
+         confirmed against a real Yahoo session -- so that guess is
+         dropped entirely rather than wasting a request on it every pull).
+      2. Try a `start=` offset for page 2 (`count=25&start=25`), comparing
+         its first row against page 1's to confirm Yahoo is actually
+         honoring the offset (rather than silently re-serving page 1).
+         This mirrors the same semicolon-path convention app/jobs/daily.py
+         already confirmed works for the API's
          `transactions;count=25;start={offset}` -- but that was the JSON
          API, and this is a `?query=string` HTML page, so it is NOT
          assumed to carry over; it's tried, not trusted.
-      3. If neither URL-param trick changes the returned rows, fall back
-         to app.scrape.browser.paginate_by_click, which drives a real
+      3. If the URL-param trick doesn't change the returned rows, fall
+         back to app.scrape.browser.paginate_by_click, which drives a real
          click on the page's "Next 25" link and re-scrapes after each
          click -- confirmed necessary at least as a fallback, since the
          saved sample page's "Next 25" link's href was IDENTICAL to the
@@ -341,48 +337,42 @@ def scrape_pull_transactions(
          plain paginated GET.
 
     Stops fetching more pages once a page comes back with zero
-    transactions (end of history) or `max_pages` is hit.
+    transactions (end of history) or `max_pages` is hit. Waits for an
+    actual row (not just the table shell, which is present in the DOM
+    almost immediately but stays empty/hidden until populated -- confirmed
+    live) via `wait_selector=".Tst-transaction-table tr"`.
     """
-    first_html = browser.fetch_page(
-        transactions_url(league_id, sport_path, count=1000), wait_selector=".Tst-transaction-table"
+    row_wait = ".Tst-transaction-table tr"
+    page1_html = browser.fetch_page(transactions_url(league_id, sport_path, count=25), wait_selector=row_wait)
+    page1_rows = parse.parse_transactions(page1_html)
+    page2_html = browser.fetch_page(
+        transactions_url(league_id, sport_path, count=25, start=25), wait_selector=row_wait
     )
-    first_rows = parse.parse_transactions(first_html)
+    page2_rows = parse.parse_transactions(page2_html)
+    page1_first_ids = {p["player_yahoo_id"] for tx in page1_rows[:1] for p in tx["players"]}
+    page2_first_ids = {p["player_yahoo_id"] for tx in page2_rows[:1] for p in tx["players"]}
 
-    all_html: list[str] = []
-    if len(first_rows) > 25:
-        # Step 1 worked: one big fetch had everything.
-        all_html = [first_html]
-    else:
-        page1_html = browser.fetch_page(
-            transactions_url(league_id, sport_path, count=25), wait_selector=".Tst-transaction-table"
-        )
-        page1_rows = parse.parse_transactions(page1_html)
-        page2_html = browser.fetch_page(
-            transactions_url(league_id, sport_path, count=25, start=25), wait_selector=".Tst-transaction-table"
-        )
-        page2_rows = parse.parse_transactions(page2_html)
-        page1_first_ids = {p["player_yahoo_id"] for tx in page1_rows[:1] for p in tx["players"]}
-        page2_first_ids = {p["player_yahoo_id"] for tx in page2_rows[:1] for p in tx["players"]}
-        if page2_rows and page1_first_ids != page2_first_ids:
-            # Step 2 worked: start= is honored. Keep paging with it.
-            all_html = [page1_html, page2_html]
-            start = 50
-            while len(all_html) < max_pages:
-                page_html = browser.fetch_page(
-                    transactions_url(league_id, sport_path, count=25, start=start),
-                    wait_selector=".Tst-transaction-table",
-                )
-                if not parse.parse_transactions(page_html):
-                    break
-                all_html.append(page_html)
-                start += 25
-        else:
-            # Step 3: neither URL trick worked -- drive real clicks.
-            all_html = browser.paginate_by_click(
-                transactions_url(league_id, sport_path, count=25),
-                row_selector=".Tst-transaction-table tr",
-                max_pages=max_pages,
+    if page2_rows and page1_first_ids != page2_first_ids:
+        # start= is honored (page 2 actually differs from page 1). Keep
+        # paging with it.
+        all_html = [page1_html, page2_html]
+        start = 50
+        while len(all_html) < max_pages:
+            page_html = browser.fetch_page(
+                transactions_url(league_id, sport_path, count=25, start=start), wait_selector=row_wait
             )
+            if not parse.parse_transactions(page_html):
+                break
+            all_html.append(page_html)
+            start += 25
+    else:
+        # start= wasn't honored (page 2 repeats page 1, or came back
+        # empty when it shouldn't have) -- drive real clicks instead.
+        all_html = browser.paginate_by_click(
+            transactions_url(league_id, sport_path, count=25),
+            row_selector=".Tst-transaction-table tr",
+            max_pages=max_pages,
+        )
 
     totals = {"transactions": 0, "players": 0}
     for html in all_html:

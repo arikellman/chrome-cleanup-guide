@@ -124,7 +124,26 @@ def fetch_page(
                     "Session expired or was revoked -- run: python -m app scrape-auth"
                 )
             if wait_selector:
-                page.wait_for_selector(wait_selector, timeout=20000)
+                # Confirmed against a real live run: the transactions
+                # table shell is present in the DOM almost immediately but
+                # stays hidden/empty until its rows are populated by a
+                # follow-up request -- so the default "visible" wait state
+                # on the bare table selector times out even though the
+                # page is working fine. A timeout here is NOT necessarily
+                # an error: it can legitimately mean "this page has no
+                # matching content" (e.g. a season with zero transactions
+                # so far) -- fall through and return whatever HTML exists
+                # rather than failing the whole fetch, and let the caller's
+                # parser (which returns an empty list on no rows) be the
+                # one to decide that's fine.
+                try:
+                    page.wait_for_selector(wait_selector, timeout=20000)
+                except Exception:  # noqa: BLE001 - see comment above
+                    logger.warning(
+                        "fetch_page: wait_selector %r never appeared/became visible on %s "
+                        "(may just mean no matching content) -- returning current page content",
+                        wait_selector, url,
+                    )
             html = page.content()
         finally:
             browser.close()
