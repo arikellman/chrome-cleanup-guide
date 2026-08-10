@@ -160,7 +160,7 @@ def ingest_standings_html(conn, html: str, season_year: int, league_id: str) -> 
 
 
 def scrape_pull_standings(conn, season_year: int, league_id: str, sport_path: str = SPORT_PATH_DEFAULT) -> dict[str, Any]:
-    html = browser.fetch_page(standings_url(league_id, sport_path))
+    html = browser.fetch_page(standings_url(league_id, sport_path), wait_selector="table")
     result = ingest_standings_html(conn, html, season_year, league_id)
     conn.commit()
     return result
@@ -225,7 +225,7 @@ def _overall_pick_number(round_num: int, pick_in_round: int | None, teams_per_ro
 
 
 def scrape_pull_draft_results(conn, season_year: int, league_id: str, sport_path: str = SPORT_PATH_DEFAULT) -> dict[str, Any]:
-    html = browser.fetch_page(draftresults_url(league_id, sport_path))
+    html = browser.fetch_page(draftresults_url(league_id, sport_path), wait_selector="table")
     result = ingest_draft_results_html(conn, html, season_year, league_id)
     conn.commit()
     return result
@@ -343,7 +343,9 @@ def scrape_pull_transactions(
     Stops fetching more pages once a page comes back with zero
     transactions (end of history) or `max_pages` is hit.
     """
-    first_html = browser.fetch_page(transactions_url(league_id, sport_path, count=1000))
+    first_html = browser.fetch_page(
+        transactions_url(league_id, sport_path, count=1000), wait_selector=".Tst-transaction-table"
+    )
     first_rows = parse.parse_transactions(first_html)
 
     all_html: list[str] = []
@@ -351,9 +353,13 @@ def scrape_pull_transactions(
         # Step 1 worked: one big fetch had everything.
         all_html = [first_html]
     else:
-        page1_html = browser.fetch_page(transactions_url(league_id, sport_path, count=25))
+        page1_html = browser.fetch_page(
+            transactions_url(league_id, sport_path, count=25), wait_selector=".Tst-transaction-table"
+        )
         page1_rows = parse.parse_transactions(page1_html)
-        page2_html = browser.fetch_page(transactions_url(league_id, sport_path, count=25, start=25))
+        page2_html = browser.fetch_page(
+            transactions_url(league_id, sport_path, count=25, start=25), wait_selector=".Tst-transaction-table"
+        )
         page2_rows = parse.parse_transactions(page2_html)
         page1_first_ids = {p["player_yahoo_id"] for tx in page1_rows[:1] for p in tx["players"]}
         page2_first_ids = {p["player_yahoo_id"] for tx in page2_rows[:1] for p in tx["players"]}
@@ -362,7 +368,10 @@ def scrape_pull_transactions(
             all_html = [page1_html, page2_html]
             start = 50
             while len(all_html) < max_pages:
-                page_html = browser.fetch_page(transactions_url(league_id, sport_path, count=25, start=start))
+                page_html = browser.fetch_page(
+                    transactions_url(league_id, sport_path, count=25, start=start),
+                    wait_selector=".Tst-transaction-table",
+                )
                 if not parse.parse_transactions(page_html):
                     break
                 all_html.append(page_html)

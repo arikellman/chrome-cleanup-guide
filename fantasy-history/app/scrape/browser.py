@@ -93,6 +93,16 @@ def fetch_page(
     """Headlessly fetches one page's fully-rendered HTML using the saved
     browser_state.json session. Raises NeedsReloginError if Yahoo
     redirects to its login page instead of serving the requested page.
+
+    Confirmed against a real live run: waiting for "networkidle" times out
+    on these pages -- Yahoo Sports pages carry constant background
+    analytics/ad beacons (comscore, rapid_p, etc., visible throughout the
+    saved page sources) that never let the network go fully quiet, so
+    Playwright's networkidle (0 connections for 500ms) effectively never
+    fires. Wait for "domcontentloaded" instead (fires as soon as the HTML
+    itself is parsed, independent of ongoing background requests) and rely
+    on `wait_selector` -- which callers should always pass -- as the real
+    "is the content I actually need here yet" signal.
     """
     from playwright.sync_api import sync_playwright
 
@@ -105,16 +115,16 @@ def fetch_page(
             if method == "post":
                 resp = page.request.post(url, form=form_data or {})
                 location = resp.headers.get("location")
-                page.goto(location or url)
+                page.goto(location or url, wait_until="domcontentloaded")
             else:
-                page.goto(url, wait_until="networkidle")
+                page.goto(url, wait_until="domcontentloaded")
             if _is_login_redirect(page.url):
                 raise NeedsReloginError(
                     f"Redirected to Yahoo login while fetching {url}. "
                     "Session expired or was revoked -- run: python -m app scrape-auth"
                 )
             if wait_selector:
-                page.wait_for_selector(wait_selector, timeout=15000)
+                page.wait_for_selector(wait_selector, timeout=20000)
             html = page.content()
         finally:
             browser.close()
@@ -186,12 +196,13 @@ def paginate_by_click(
         context = browser.new_context(storage_state=str(state_path))
         page = context.new_page()
         try:
-            page.goto(url, wait_until="networkidle")
+            page.goto(url, wait_until="domcontentloaded")
             if _is_login_redirect(page.url):
                 raise NeedsReloginError(
                     f"Redirected to Yahoo login while fetching {url}. "
                     "Session expired or was revoked -- run: python -m app scrape-auth"
                 )
+            page.wait_for_selector(row_selector, timeout=20000)
             for _ in range(max_pages):
                 pages_html.append(page.content())
                 first_row_before = page.locator(row_selector).first.inner_text()
