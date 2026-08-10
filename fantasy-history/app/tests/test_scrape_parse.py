@@ -37,6 +37,22 @@ class TestParseStandings(unittest.TestCase):
         self.assertEqual(points[0]["league_id"], "74647")
         self.assertEqual(points[0]["team_id"], "9")
         self.assertEqual(points[0]["Total Points"], "60.5")
+        self.assertEqual(points[0]["Pts Change"], "1.5")
+
+    def test_team_name_and_points_columns_are_position_not_header_text(self):
+        # Confirmed real: Yahoo's header for the team-name column varies
+        # by season ("Team Name" vs plain "Team"), and the points table's
+        # "Total Points" header once rendered as a private-use icon
+        # character instead of literal text. Simulate both by renaming
+        # the headers but leaving the actual column positions the same --
+        # the parser must still recover the right values by position.
+        html = self.html.replace("<th>Team Name</th>", "<th>Team</th>", 1).replace(
+            "<th>Total Points</th>", "<th></th>", 1
+        )
+        parsed = parse.parse_standings_tables(html)
+        self.assertEqual(parsed["points"][0]["Team Name"], "Prime Time")
+        self.assertEqual(parsed["points"][0]["Total Points"], "60.5")
+        self.assertEqual(parsed["points"][0]["Pts Change"], "1.5")
 
     def test_truncated_name_uses_title_attribute(self):
         points = self.parsed["points"]

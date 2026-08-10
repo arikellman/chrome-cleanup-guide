@@ -147,9 +147,31 @@ def parse_standings_tables(html: str) -> dict[str, Any]:
             team_link = cells[1].find("a")
             ids = _team_id_from_href(team_link.get("href") if team_link else None)
             row: dict[str, Any] = {"league_id": ids[0] if ids else None, "team_id": ids[1] if ids else None}
-            for key, cell in zip(col_keys, cells):
-                if key == "Team Name":
-                    row[key] = cell.get("title") or cell.get_text(" ", strip=True)
+            n = len(cells)
+            for i, (key, cell) in enumerate(zip(col_keys, cells)):
+                if i == 1:
+                    # Team name column: keyed by POSITION, not by the
+                    # header's literal text -- confirmed real that Yahoo's
+                    # header for this column varies by season ("Team
+                    # Name" in 2026, plain "Team" in 2025), which silently
+                    # broke every downstream lookup keyed on the literal
+                    # string "Team Name". Always store under a fixed
+                    # "Team Name" key so callers never need to know a
+                    # given season's exact header wording.
+                    row["Team Name"] = cell.get("title") or cell.get_text(" ", strip=True)
+                elif kind == "points" and i == n - 2:
+                    # Same header-drift problem confirmed real for the
+                    # "points" table's trailing two columns: 2025's "Total
+                    # Points" header rendered as a private-use icon
+                    # character ('Total ') instead of literal text,
+                    # which -- beyond just failing to populate points_for
+                    # -- would have made app.scrape.jobs's
+                    # _NON_STAT_COLUMNS check miss it entirely, causing it
+                    # to be mistaken for a real stat category. Always the
+                    # second-to-last and last columns on this table.
+                    row["Total Points"] = cell.get_text(" ", strip=True)
+                elif kind == "points" and i == n - 1:
+                    row["Pts Change"] = cell.get_text(" ", strip=True)
                 else:
                     row[key] = cell.get_text(" ", strip=True)
             result[kind].append(row)

@@ -36,7 +36,11 @@ def _to_int(value: Any) -> int | None:
     try:
         if value in (None, ""):
             return None
-        return int(str(value).replace(",", ""))
+        # Confirmed real: some seasons' Rank column renders as "1." (with
+        # a trailing period) rather than a bare "1" -- int() rejects that
+        # outright, which silently dropped every rank to None rather than
+        # raising anywhere visible.
+        return int(str(value).replace(",", "").rstrip("."))
     except (TypeError, ValueError):
         return None
 
