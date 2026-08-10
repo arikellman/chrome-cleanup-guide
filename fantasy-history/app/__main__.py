@@ -145,18 +145,25 @@ def _current_scrape_league_and_year(config: dict) -> tuple[str, int]:
     return league_id, season_year
 
 
-def _scrape_one_season(conn, season_year: int, league_id: str) -> dict:
+def _scrape_one_season(conn, season_year: int, league_id: str, base_url: str | None = None) -> dict:
     """Runs all three scrape pulls (standings, draft results,
     transactions) for one season into the existing DB tables. Draft
     results and transactions both depend on that season's `teams` rows
     already existing, so standings (which populates `teams`) always runs
-    first."""
+    first.
+
+    `base_url` should be passed for any season OTHER than the currently
+    configured one -- confirmed live that historical seasons' URLs can
+    carry a year path segment the default league_id+sport_path template
+    doesn't know about (see app/scrape/jobs.py's league_home_url
+    docstring) -- pass None only for the current season.
+    """
     from app.scrape import jobs as scrape_jobs
 
     result = {}
-    result["standings"] = scrape_jobs.scrape_pull_standings(conn, season_year, league_id)
-    result["draft_results"] = scrape_jobs.scrape_pull_draft_results(conn, season_year, league_id)
-    result["transactions"] = scrape_jobs.scrape_pull_transactions(conn, season_year, league_id)
+    result["standings"] = scrape_jobs.scrape_pull_standings(conn, season_year, league_id, base_url=base_url)
+    result["draft_results"] = scrape_jobs.scrape_pull_draft_results(conn, season_year, league_id, base_url=base_url)
+    result["transactions"] = scrape_jobs.scrape_pull_transactions(conn, season_year, league_id, base_url=base_url)
     return result
 
 
@@ -201,16 +208,16 @@ def cmd_backfill(args: argparse.Namespace) -> None:
             year = current_year
             while year >= 2001:
                 try:
-                    target_league_id = season_nav.resolve_and_cache_season_league_id(config, year, sport_path)
+                    resolved = season_nav.resolve_and_cache_season_league_id(config, year, sport_path)
                 except Exception as exc:  # noqa: BLE001 - see docstring
                     logger.exception("gotoseason resolution failed for season %s", year)
                     errors.append(f"{year}: {exc}")
                     break
-                if target_league_id is None:
+                if resolved is None:
                     print(f"No {year} season found for this league -- stopping backfill.")
                     break
                 try:
-                    _scrape_one_season(conn, year, target_league_id)
+                    _scrape_one_season(conn, year, resolved["league_id"], base_url=resolved.get("base_url"))
                     seasons_done.append(year)
                 except Exception as exc:  # noqa: BLE001 - one bad season shouldn't kill the whole backfill
                     logger.exception("Backfill failed for season %s", year)
@@ -218,15 +225,15 @@ def cmd_backfill(args: argparse.Namespace) -> None:
                 year -= 1
         else:
             season_year = args.season or current_year
-            target_league_id = (
-                league_id
-                if season_year == current_year
-                else season_nav.resolve_and_cache_season_league_id(config, season_year, sport_path)
-            )
-            if target_league_id is None:
-                print(f"No {season_year} season found for this league.")
-                sys.exit(1)
-            _scrape_one_season(conn, season_year, target_league_id)
+            if season_year == current_year:
+                target_league_id, target_base_url = league_id, None
+            else:
+                resolved = season_nav.resolve_and_cache_season_league_id(config, season_year, sport_path)
+                if resolved is None:
+                    print(f"No {season_year} season found for this league.")
+                    sys.exit(1)
+                target_league_id, target_base_url = resolved["league_id"], resolved.get("base_url")
+            _scrape_one_season(conn, season_year, target_league_id, base_url=target_base_url)
             seasons_done.append(season_year)
     finally:
         conn.close()
@@ -277,17 +284,19 @@ def cmd_scrape_season(args: argparse.Namespace) -> None:
             errors: list[str] = []
             while year >= 2001:
                 try:
-                    target_league_id = season_nav.resolve_and_cache_season_league_id(config, year, sport_path)
+                    resolved = season_nav.resolve_and_cache_season_league_id(config, year, sport_path)
                 except Exception as exc:  # noqa: BLE001 - a bad season shouldn't kill the whole walk
                     logger.exception("gotoseason resolution failed for season %s", year)
                     errors.append(f"{year}: {exc}")
                     break
-                if target_league_id is None:
+                if resolved is None:
                     print(f"No {year} season found for this league -- stopping walk-back.")
                     break
-                print(f"Scraping season {year} (league_id={target_league_id})...")
+                print(f"Scraping season {year} (league_id={resolved['league_id']}, base_url={resolved['base_url']})...")
                 try:
-                    results[year] = _scrape_one_season(conn, year, target_league_id)
+                    results[year] = _scrape_one_season(
+                        conn, year, resolved["league_id"], base_url=resolved.get("base_url")
+                    )
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("Scrape failed for season %s", year)
                     errors.append(f"{year}: {exc}")
@@ -299,15 +308,15 @@ def cmd_scrape_season(args: argparse.Namespace) -> None:
             if args.year is None:
                 print("Provide a season year, or pass --all-seasons.")
                 sys.exit(1)
-            target_league_id = (
-                league_id
-                if args.year == current_year
-                else season_nav.resolve_and_cache_season_league_id(config, args.year, sport_path)
-            )
-            if target_league_id is None:
-                print(f"No {args.year} season found for this league.")
-                sys.exit(1)
-            result = _scrape_one_season(conn, args.year, target_league_id)
+            if args.year == current_year:
+                target_league_id, target_base_url = league_id, None
+            else:
+                resolved = season_nav.resolve_and_cache_season_league_id(config, args.year, sport_path)
+                if resolved is None:
+                    print(f"No {args.year} season found for this league.")
+                    sys.exit(1)
+                target_league_id, target_base_url = resolved["league_id"], resolved.get("base_url")
+            result = _scrape_one_season(conn, args.year, target_league_id, base_url=target_base_url)
             print(result)
     finally:
         conn.close()

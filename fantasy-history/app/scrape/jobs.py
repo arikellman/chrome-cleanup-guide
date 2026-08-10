@@ -50,22 +50,39 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def league_home_url(league_id: str, sport_path: str = SPORT_PATH_DEFAULT) -> str:
+def league_home_url(league_id: str, sport_path: str = SPORT_PATH_DEFAULT, *, base_url: str | None = None) -> str:
+    """Builds the league's base URL. Pass `base_url` (from
+    app.scrape.season_nav.resolve_and_cache_season_league_id) for any
+    season OTHER than the currently-configured one -- confirmed against a
+    real live gotoseason walk-back that historical seasons can carry a
+    year path segment (".../2005/b1/4256") that this f"{sport_path}/
+    {league_id}" template alone would silently drop, producing a URL for
+    the wrong season's data (or a 404). Without `base_url`, this always
+    builds the no-year-prefix current-season pattern -- correct ONLY for
+    the season in `config["yahoo_web_current_season_year"]`.
+    """
+    if base_url:
+        return base_url
     return f"https://baseball.fantasysports.yahoo.com/{sport_path}/{league_id}"
 
 
-def standings_url(league_id: str, sport_path: str = SPORT_PATH_DEFAULT) -> str:
-    return f"{league_home_url(league_id, sport_path)}/standings"
+def standings_url(league_id: str, sport_path: str = SPORT_PATH_DEFAULT, *, base_url: str | None = None) -> str:
+    return f"{league_home_url(league_id, sport_path, base_url=base_url)}/standings"
 
 
-def draftresults_url(league_id: str, sport_path: str = SPORT_PATH_DEFAULT) -> str:
-    return f"{league_home_url(league_id, sport_path)}/draftresults"
+def draftresults_url(league_id: str, sport_path: str = SPORT_PATH_DEFAULT, *, base_url: str | None = None) -> str:
+    return f"{league_home_url(league_id, sport_path, base_url=base_url)}/draftresults"
 
 
 def transactions_url(
-    league_id: str, sport_path: str = SPORT_PATH_DEFAULT, *, count: int = 25, start: int | None = None
+    league_id: str,
+    sport_path: str = SPORT_PATH_DEFAULT,
+    *,
+    count: int = 25,
+    start: int | None = None,
+    base_url: str | None = None,
 ) -> str:
-    url = f"{league_home_url(league_id, sport_path)}/transactions?transactionsfilter=all&count={count}"
+    url = f"{league_home_url(league_id, sport_path, base_url=base_url)}/transactions?transactionsfilter=all&count={count}"
     if start:
         url += f"&start={start}"
     return url
@@ -159,8 +176,10 @@ def ingest_standings_html(conn, html: str, season_year: int, league_id: str) -> 
     return {"teams": len(standings_rows), "stat_rows": len(stat_rows)}
 
 
-def scrape_pull_standings(conn, season_year: int, league_id: str, sport_path: str = SPORT_PATH_DEFAULT) -> dict[str, Any]:
-    html = browser.fetch_page(standings_url(league_id, sport_path), wait_selector="table")
+def scrape_pull_standings(
+    conn, season_year: int, league_id: str, sport_path: str = SPORT_PATH_DEFAULT, *, base_url: str | None = None
+) -> dict[str, Any]:
+    html = browser.fetch_page(standings_url(league_id, sport_path, base_url=base_url), wait_selector="table")
     result = ingest_standings_html(conn, html, season_year, league_id)
     conn.commit()
     return result
@@ -224,8 +243,10 @@ def _overall_pick_number(round_num: int, pick_in_round: int | None, teams_per_ro
     return (round_num - 1) * teams_per_round + pick_in_round
 
 
-def scrape_pull_draft_results(conn, season_year: int, league_id: str, sport_path: str = SPORT_PATH_DEFAULT) -> dict[str, Any]:
-    html = browser.fetch_page(draftresults_url(league_id, sport_path), wait_selector="table")
+def scrape_pull_draft_results(
+    conn, season_year: int, league_id: str, sport_path: str = SPORT_PATH_DEFAULT, *, base_url: str | None = None
+) -> dict[str, Any]:
+    html = browser.fetch_page(draftresults_url(league_id, sport_path, base_url=base_url), wait_selector="table")
     result = ingest_draft_results_html(conn, html, season_year, league_id)
     conn.commit()
     return result
@@ -308,7 +329,13 @@ def ingest_transactions_html(conn, html: str, season_year: int, league_id: str) 
 
 
 def scrape_pull_transactions(
-    conn, season_year: int, league_id: str, sport_path: str = SPORT_PATH_DEFAULT, *, max_pages: int = 50
+    conn,
+    season_year: int,
+    league_id: str,
+    sport_path: str = SPORT_PATH_DEFAULT,
+    *,
+    max_pages: int = 50,
+    base_url: str | None = None,
 ) -> dict[str, Any]:
     """Fetches and ingests every transactions page for this league.
 
@@ -343,10 +370,10 @@ def scrape_pull_transactions(
     live) via `wait_selector=".Tst-transaction-table tr"`.
     """
     row_wait = ".Tst-transaction-table tr"
-    page1_html = browser.fetch_page(transactions_url(league_id, sport_path, count=25), wait_selector=row_wait)
+    page1_html = browser.fetch_page(transactions_url(league_id, sport_path, count=25, base_url=base_url), wait_selector=row_wait)
     page1_rows = parse.parse_transactions(page1_html)
     page2_html = browser.fetch_page(
-        transactions_url(league_id, sport_path, count=25, start=25), wait_selector=row_wait
+        transactions_url(league_id, sport_path, count=25, start=25, base_url=base_url), wait_selector=row_wait
     )
     page2_rows = parse.parse_transactions(page2_html)
     page1_first_ids = {p["player_yahoo_id"] for tx in page1_rows[:1] for p in tx["players"]}
@@ -359,7 +386,7 @@ def scrape_pull_transactions(
         start = 50
         while len(all_html) < max_pages:
             page_html = browser.fetch_page(
-                transactions_url(league_id, sport_path, count=25, start=start), wait_selector=row_wait
+                transactions_url(league_id, sport_path, count=25, start=start, base_url=base_url), wait_selector=row_wait
             )
             if not parse.parse_transactions(page_html):
                 break
@@ -369,7 +396,7 @@ def scrape_pull_transactions(
         # start= wasn't honored (page 2 repeats page 1, or came back
         # empty when it shouldn't have) -- drive real clicks instead.
         all_html = browser.paginate_by_click(
-            transactions_url(league_id, sport_path, count=25),
+            transactions_url(league_id, sport_path, count=25, base_url=base_url),
             row_selector=".Tst-transaction-table tr",
             max_pages=max_pages,
         )

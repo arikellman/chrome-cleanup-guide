@@ -175,6 +175,25 @@ class TestSeasonNav(unittest.TestCase):
         with self.assertRaises(ValueError):
             season_nav.extract_season_slug("<html><body>no select here</body></html>")
 
+    def test_base_url_from_redirect_current_season_no_year_prefix(self):
+        self.assertEqual(
+            season_nav.base_url_from_redirect("https://baseball.fantasysports.yahoo.com/b1/74647/standings"),
+            "https://baseball.fantasysports.yahoo.com/b1/74647",
+        )
+
+    def test_base_url_from_redirect_historical_season_year_prefix(self):
+        # Confirmed against a real live gotoseason walk-back: historical
+        # seasons redirect to a URL with the year as its own path segment
+        # immediately before "/b1/" (e.g. 2005), unlike the current
+        # season's URL (no year segment at all).
+        self.assertEqual(
+            season_nav.base_url_from_redirect("https://baseball.fantasysports.yahoo.com/2005/b1/4256/standings"),
+            "https://baseball.fantasysports.yahoo.com/2005/b1/4256",
+        )
+
+    def test_base_url_from_redirect_no_match(self):
+        self.assertIsNone(season_nav.base_url_from_redirect("https://login.yahoo.com/whatever"))
+
 
 class TestIdentity(unittest.TestCase):
     def setUp(self):

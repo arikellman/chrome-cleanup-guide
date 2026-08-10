@@ -79,10 +79,16 @@ def load_config() -> dict[str, Any]:
     #                           not something to type in by hand.
     #   yahoo_web_sport_path:   the sport's URL path segment, e.g. "b1"
     #                           for baseball.
-    #   scraped_season_league_ids: {season_year: league_id} cache built up
-    #                           by season_nav.resolve_season_league_id so
-    #                           the gotoseason POST is only done once per
-    #                           season ever, not once per pull.
+    #   scraped_season_league_ids: {season_year: {"league_id": ..., "base_url":
+    #                           ...}} cache built up by
+    #                           season_nav.resolve_season_league_id so the
+    #                           gotoseason POST is only done once per season
+    #                           ever, not once per pull. base_url is the
+    #                           REAL confirmed URL prefix for that season
+    #                           (which may carry a year path segment --
+    #                           confirmed varies live, see
+    #                           season_nav.BASE_URL_RE) and is what every
+    #                           page fetch for that season is built from.
     config.setdefault("yahoo_web_league_id", None)
     config.setdefault("yahoo_web_current_season_year", None)
     config.setdefault("yahoo_web_season_slug", None)

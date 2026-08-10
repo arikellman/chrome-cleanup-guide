@@ -31,6 +31,16 @@ logger = logging.getLogger(__name__)
 
 SEASON_OPTION_RE = re.compile(r"^(\d{4})_(.+)$")
 LEAGUE_ID_IN_URL_RE = re.compile(r"/b1/(\d+)(?:[/?]|$)")
+# Confirmed against a real live gotoseason walk-back: historical seasons
+# (at least 2001/2003/2004/2005) redirect to a URL with the YEAR as its
+# own path segment immediately before "/b1/" --
+# https://baseball.fantasysports.yahoo.com/2005/b1/4256/standings -- unlike
+# the current season's https://baseball.fantasysports.yahoo.com/b1/74647/...
+# (no year segment at all). Whether recent-past (non-ancient) seasons also
+# get a year prefix is NOT confirmed either way, so this must never be
+# assumed -- always derive the real base URL from wherever gotoseason
+# actually redirected to, never reconstruct it from a fixed template.
+BASE_URL_RE = re.compile(r"^(https?://[^/]+(?:/\d{4})?/b1/\d+)")
 
 
 def _league_home_url(league_id: str, sport_path: str) -> str:
@@ -89,47 +99,66 @@ def league_id_from_url(url: str) -> str | None:
     return m.group(1) if m else None
 
 
-def resolve_season_league_id(page: Any, form_action: str, seasonspec_value: str) -> str:
-    """Drives a real Playwright Page through the `gotoseason` POST and
-    returns the numeric league_id parsed out of wherever Yahoo redirects
-    to.
+def base_url_from_redirect(url: str) -> str | None:
+    """Pulls "https://.../[{year}/]b1/{league_id}" (everything up through
+    the league_id, WITH any year path segment that preceded "/b1/" kept
+    intact) out of a real URL Yahoo redirected to, or None if it doesn't
+    match. This -- not a reconstructed template -- is what every scraped
+    page URL for that season must be built from, since whether a given
+    season's URL carries a year prefix is confirmed to vary (see
+    BASE_URL_RE's comment above) and must never be assumed."""
+    m = BASE_URL_RE.match(url)
+    return m.group(1) if m else None
 
-    UNVERIFIED LIVE -- see module docstring. Implemented per Playwright's
-    documented `page.request.post` + `page.goto` API: POST the form data,
-    follow the `Location` header if Yahoo responds with a redirect (the
-    expected case for a "POST that changes what season you're looking
-    at"), or just navigate to whatever URL the response actually came
-    from if there's no explicit redirect header (defensive fallback in
-    case Yahoo instead serves the destination page directly as a 200).
+
+def resolve_season_league_id(page: Any, form_action: str, seasonspec_value: str) -> tuple[str, str]:
+    """Drives a real Playwright Page through the `gotoseason` POST and
+    returns (league_id, base_url) parsed out of wherever Yahoo redirects
+    to -- base_url is the real, confirmed URL prefix for this season
+    (which may or may not carry a year path segment, see BASE_URL_RE) and
+    is what every subsequent page fetch for this season must be built
+    from via f"{base_url}/{page_slug}", never reconstructed from
+    league_id + sport_path alone.
+
+    Implemented per Playwright's documented `page.request.post` +
+    `page.goto` API: POST the form data, follow the `Location` header if
+    Yahoo responds with a redirect (the expected case for a "POST that
+    changes what season you're looking at"), or just navigate to whatever
+    URL the response actually came from if there's no explicit redirect
+    header (defensive fallback in case Yahoo instead serves the
+    destination page directly as a 200).
     """
     resp = page.request.post(form_action, form={"seasonspec": seasonspec_value})
     location = resp.headers.get("location")
     page.goto(location or resp.url)
     league_id = league_id_from_url(page.url)
-    if league_id is None:
+    base_url = base_url_from_redirect(page.url)
+    if league_id is None or base_url is None:
         raise RuntimeError(
-            f"Could not extract a league_id from the URL after gotoseason POST: {page.url}"
+            f"Could not extract a league_id/base_url from the URL after gotoseason POST: {page.url}"
         )
-    return league_id
+    return league_id, base_url
 
 
 def resolve_and_cache_season_league_id(
     config: dict[str, Any], season_year: int, sport_path: str = "b1"
-) -> str | None:
+) -> dict[str, str] | None:
     """Higher-level, cached version of resolve_season_league_id: looks in
-    `config["scraped_season_league_ids"]` first, short-circuits to
-    `config["yahoo_web_league_id"]` when `season_year` is the currently
-    configured season (no POST needed at all), and otherwise drives a
-    real page through the league home page's `gotoseason` form -- saving
-    the result into `config` (and persisting it via `cfg.save_config`)
-    either way, so the POST is done at most once per season ever.
+    `config["scraped_season_league_ids"]` first, short-circuits (no POST
+    needed at all) when `season_year` is the currently configured season,
+    and otherwise drives a real page through the league home page's
+    `gotoseason` form -- saving the result into `config` (and persisting
+    it via `cfg.save_config`) either way, so the POST is done at most once
+    per season ever.
 
-    Returns None if `season_year` isn't one of the options Yahoo actually
-    offers for this league (e.g. we've walked back past the league's
-    first season) -- callers (see app/__main__.py's `--all-seasons`) treat
-    that as "stop walking back", not as an error.
-
-    UNVERIFIED LIVE -- see app/scrape/__init__.py's module docstring.
+    Returns {"league_id": ..., "base_url": ...} (base_url is the real
+    confirmed URL prefix for that season -- see resolve_season_league_id's
+    docstring for why this, not a reconstructed template, is what every
+    page fetch for that season must be built from), or None if
+    `season_year` isn't one of the options Yahoo actually offers for this
+    league (e.g. we've walked back past the league's first season) --
+    callers (see app/__main__.py's `--all-seasons`) treat that as "stop
+    walking back", not as an error.
     """
     cache = config.setdefault("scraped_season_league_ids", {})
     key = str(season_year)
@@ -143,14 +172,16 @@ def resolve_and_cache_season_league_id(
             "No current-season league configured yet. Run: python -m app scrape-auth"
         )
     if current_season_year == season_year:
-        cache[key] = current_league_id
+        result = {"league_id": current_league_id, "base_url": _league_home_url(current_league_id, sport_path)}
+        cache[key] = result
         cfg.save_config(config)
-        return current_league_id
+        return result
 
     home_url = _league_home_url(current_league_id, sport_path)
 
-    def _do(page: Any) -> str | None:
-        page.goto(home_url, wait_until="networkidle")
+    def _do(page: Any) -> tuple[str, str] | None:
+        page.goto(home_url, wait_until="domcontentloaded")
+        page.wait_for_selector("select[name='seasonspec']", timeout=20000)
         html = page.content()
         slug, options = extract_season_slug(html)
         if not config.get("yahoo_web_season_slug"):
@@ -162,9 +193,11 @@ def resolve_and_cache_season_league_id(
         form_action = gotoseason_form_action(html)
         return resolve_season_league_id(page, form_action, option_value)
 
-    league_id = browser.run_with_page(_do)
-    if league_id is None:
+    resolved = browser.run_with_page(_do)
+    if resolved is None:
         return None
-    cache[key] = league_id
+    league_id, base_url = resolved
+    result = {"league_id": league_id, "base_url": base_url}
+    cache[key] = result
     cfg.save_config(config)
-    return league_id
+    return result
