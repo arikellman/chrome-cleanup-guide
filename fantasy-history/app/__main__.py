@@ -297,10 +297,24 @@ def cmd_scrape_season(args: argparse.Namespace) -> None:
                     results[year] = _scrape_one_season(
                         conn, year, resolved["league_id"], base_url=resolved.get("base_url")
                     )
+                    print(f"  {year}: {results[year]}")
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("Scrape failed for season %s", year)
                     errors.append(f"{year}: {exc}")
+                    print(f"  {year}: FAILED -- {exc}")
                 year -= 1
+                # Pacing, not a network fix: Yahoo has been observed to
+                # time out under sustained back-to-back scraping. Pausing
+                # for a human to confirm between seasons (default on --
+                # pass --no-pause to run unattended) gives it room to
+                # recover rather than hammering it season after season.
+                if year >= 2001 and not args.no_pause:
+                    answer = input(
+                        f"Continue to season {year}? [Enter = yes, q = stop here] "
+                    ).strip().lower()
+                    if answer.startswith("q") or answer.startswith("n"):
+                        print("Stopping at your request.")
+                        break
             print({"seasons": sorted(results), "errors": errors})
             if not results and errors:
                 sys.exit(1)
@@ -573,6 +587,12 @@ def main() -> None:
     p_scrape_season.add_argument("year", type=int, nargs="?", help="Season year to scrape")
     p_scrape_season.add_argument(
         "--all-seasons", action="store_true", help="Walk back and scrape every season found, to 2001"
+    )
+    p_scrape_season.add_argument(
+        "--no-pause",
+        action="store_true",
+        help="With --all-seasons, don't prompt between seasons (default pauses for confirmation, "
+        "since Yahoo has been observed to time out under sustained back-to-back scraping)",
     )
     p_scrape_season.set_defaults(func=cmd_scrape_season)
 
