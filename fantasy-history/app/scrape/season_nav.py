@@ -31,15 +31,22 @@ logger = logging.getLogger(__name__)
 
 SEASON_OPTION_RE = re.compile(r"^(\d{4})_(.+)$")
 LEAGUE_ID_IN_URL_RE = re.compile(r"/b1/(\d+)(?:[/?]|$)")
-# Confirmed against a real live gotoseason walk-back: historical seasons
-# (at least 2001/2003/2004/2005) redirect to a URL with the YEAR as its
-# own path segment immediately before "/b1/" --
-# https://baseball.fantasysports.yahoo.com/2005/b1/4256/standings -- unlike
-# the current season's https://baseball.fantasysports.yahoo.com/b1/74647/...
-# (no year segment at all). Whether recent-past (non-ancient) seasons also
-# get a year prefix is NOT confirmed either way, so this must never be
-# assumed -- always derive the real base URL from wherever gotoseason
-# actually redirected to, never reconstruct it from a fixed template.
+# Confirmed live across FIVE different non-current seasons now (2001,
+# 2003, 2004, 2005, AND 2025 -- so this is not just an "ancient seasons"
+# quirk, it's every non-current season): the real, working URL always has
+# the year as its own path segment immediately before "/b1/" --
+# https://baseball.fantasysports.yahoo.com/2025/b1/33324/standings. Only
+# the CURRENT season omits it --
+# https://baseball.fantasysports.yahoo.com/b1/74647/standings.
+#
+# The gotoseason POST's redirect was initially trusted to reveal this on
+# its own (via base_url_from_redirect below), but confirmed live that it
+# lands on the no-year-prefix form even for a season where that form
+# serves an empty page -- so base_url is now always CONSTRUCTED with the
+# year prefix for any non-current season (see resolve_season_league_id),
+# not read off the redirect. base_url_from_redirect/BASE_URL_RE are kept
+# only as a diagnostic cross-check (logged if it disagrees), in case this
+# rule is ever wrong for some future season.
 BASE_URL_RE = re.compile(r"^(https?://[^/]+(?:/\d{4})?/b1/\d+)")
 
 
@@ -111,14 +118,22 @@ def base_url_from_redirect(url: str) -> str | None:
     return m.group(1) if m else None
 
 
-def resolve_season_league_id(page: Any, form_action: str, seasonspec_value: str) -> tuple[str, str]:
+def resolve_season_league_id(
+    page: Any, form_action: str, seasonspec_value: str, season_year: int, sport_path: str
+) -> tuple[str, str]:
     """Drives a real Playwright Page through the `gotoseason` POST and
-    returns (league_id, base_url) parsed out of wherever Yahoo redirects
-    to -- base_url is the real, confirmed URL prefix for this season
-    (which may or may not carry a year path segment, see BASE_URL_RE) and
-    is what every subsequent page fetch for this season must be built
-    from via f"{base_url}/{page_slug}", never reconstructed from
-    league_id + sport_path alone.
+    returns (league_id, base_url) for that season. league_id is parsed out
+    of wherever Yahoo redirects to. base_url is CONSTRUCTED as
+    f"https://baseball.fantasysports.yahoo.com/{season_year}/{sport_path}/
+    {league_id}" -- confirmed live across 5 different non-current seasons
+    that this year-prefixed form is the one that actually serves content,
+    NOT whatever the gotoseason redirect's own URL looks like (confirmed
+    live that it can land on the no-year-prefix form even when that form
+    serves an empty page for that season). If the redirect's own URL
+    disagrees with this constructed base_url, that's logged as a
+    diagnostic warning (not an error) in case this rule is ever wrong for
+    some future season -- but the constructed, confirmed-working form is
+    what's trusted and returned.
 
     Implemented per Playwright's documented `page.request.post` +
     `page.goto` API: POST the form data, follow the `Location` header if
@@ -132,10 +147,17 @@ def resolve_season_league_id(page: Any, form_action: str, seasonspec_value: str)
     location = resp.headers.get("location")
     page.goto(location or resp.url)
     league_id = league_id_from_url(page.url)
-    base_url = base_url_from_redirect(page.url)
-    if league_id is None or base_url is None:
-        raise RuntimeError(
-            f"Could not extract a league_id/base_url from the URL after gotoseason POST: {page.url}"
+    if league_id is None:
+        raise RuntimeError(f"Could not extract a league_id from the URL after gotoseason POST: {page.url}")
+
+    base_url = f"https://baseball.fantasysports.yahoo.com/{season_year}/{sport_path}/{league_id}"
+    redirect_base_url = base_url_from_redirect(page.url)
+    if redirect_base_url and redirect_base_url != base_url:
+        logger.warning(
+            "gotoseason redirect for season %s landed on %r, which disagrees with the constructed "
+            "year-prefixed base_url %r -- using the constructed one (confirmed live to be the one "
+            "that actually serves content), but flagging the mismatch in case the rule is wrong here.",
+            season_year, redirect_base_url, base_url,
         )
     return league_id, base_url
 
@@ -208,7 +230,7 @@ def resolve_and_cache_season_league_id(
             logger.info("Season %s has no gotoseason option for this league -- stopping walk-back", season_year)
             return None
         form_action = gotoseason_form_action(html)
-        return resolve_season_league_id(page, form_action, option_value)
+        return resolve_season_league_id(page, form_action, option_value, season_year, sport_path)
 
     resolved = browser.run_with_page(_do)
     if resolved is None:
