@@ -279,7 +279,7 @@ def cmd_scrape_season(args: argparse.Namespace) -> None:
     conn = database.get_connection()
     try:
         if args.all_seasons:
-            year = current_year
+            year = args.year if args.year is not None else current_year
             results: dict[int, Any] = {}
             errors: list[str] = []
             while year >= 2001:
@@ -584,7 +584,14 @@ def main() -> None:
     p_scrape_season = sub.add_parser(
         "scrape-season", help="Scrape standings/draft results/transactions for one or every season"
     )
-    p_scrape_season.add_argument("year", type=int, nargs="?", help="Season year to scrape")
+    p_scrape_season.add_argument(
+        "year",
+        type=int,
+        nargs="?",
+        help="Season year to scrape. With --all-seasons, this is the year to START the "
+        "walk-back from instead of the current season (e.g. `scrape-season 2024 "
+        "--all-seasons` skips seasons already done and resumes at 2024, walking down to 2001).",
+    )
     p_scrape_season.add_argument(
         "--all-seasons", action="store_true", help="Walk back and scrape every season found, to 2001"
     )
