@@ -58,7 +58,14 @@ def _write_json_secure(path: Path, data: dict[str, Any]) -> None:
 def _read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    with open(path, "r") as f:
+    # utf-8-sig (not plain utf-8) transparently strips a leading BOM if
+    # present, and is otherwise identical for BOM-less files. Confirmed
+    # real: Windows PowerShell's `Set-Content -Encoding utf8` (and
+    # `Out-File`) write a UTF-8 BOM by default, which plain utf-8 does NOT
+    # strip -- json.load then chokes on that leading character with
+    # "Expecting value: line 1 column 1 (char 0)", indistinguishable at a
+    # glance from a genuinely empty file.
+    with open(path, "r", encoding="utf-8-sig") as f:
         return json.load(f)
 
 
