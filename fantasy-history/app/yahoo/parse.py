@@ -15,6 +15,11 @@ Every response is also saved verbatim into the raw_responses table
 here is named or nested differently than expected, it can be fixed here
 without needing to re-fetch anything -- just read raw_responses and adjust
 the relevant function below. test_parse.py documents the assumed shape.
+
+DORMANT: Yahoo revoked this app's Fantasy Sports API access (see
+app/yahoo/client.py's module docstring). See app/scrape/parse.py for the
+HTML parsers now used instead. Left in place untouched in case Yahoo ever
+restores access.
 """
 from __future__ import annotations
 

@@ -5,6 +5,11 @@ This is the mechanism that lets the user provide credentials exactly once:
 Yahoo's refresh token does not expire with normal use, so every unattended
 daily run can mint a fresh access token without any human interaction,
 until the user explicitly revokes the app in their Yahoo account settings.
+
+DORMANT: Yahoo revoked this app's Fantasy Sports API access (see
+app/yahoo/client.py's module docstring). Left in place untouched in case
+Yahoo ever restores access; see app/scrape/browser.py for the
+browser-session login now used instead.
 """
 from __future__ import annotations
 

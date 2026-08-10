@@ -1,15 +1,18 @@
-"""CLI entry point: python -m app <auth|pull|backfill|serve|status>"""
+"""CLI entry point: python -m app <auth|pull|backfill|scrape-auth|scrape-season|serve|status>"""
 from __future__ import annotations
 
 import argparse
 import logging
 import sys
 import webbrowser
+from typing import Any
 
 from app import config as cfg
 from app.db import database
 from app.yahoo import oauth, parse
 from app.yahoo.client import YahooClient
+
+logger = logging.getLogger(__name__)
 
 
 def _to_int(value):
@@ -128,23 +131,186 @@ def _discover_prior_seasons(client: YahooClient, league_key: str, current_season
     return priors
 
 
-def cmd_pull(_args: argparse.Namespace) -> None:
-    from app.jobs.daily import run_daily_pull
+def _current_scrape_league_and_year(config: dict) -> tuple[str, int]:
+    league_id = config.get("yahoo_web_league_id")
+    season_year = config.get("yahoo_web_current_season_year")
+    if not league_id or not season_year:
+        raise RuntimeError(
+            "yahoo_web_league_id / yahoo_web_current_season_year not set in data/config.json. "
+            "Set them once: yahoo_web_league_id is the numeric id in your league's URL "
+            "(the 74647 in baseball.fantasysports.yahoo.com/b1/74647/...), and "
+            "yahoo_web_current_season_year is the season that id currently points to. "
+            "Run `python -m app scrape-auth` first if you haven't logged in yet."
+        )
+    return league_id, season_year
 
-    result = run_daily_pull(kind="manual")
-    print(result)
-    if result["status"] == "error":
+
+def _scrape_one_season(conn, season_year: int, league_id: str) -> dict:
+    """Runs all three scrape pulls (standings, draft results,
+    transactions) for one season into the existing DB tables. Draft
+    results and transactions both depend on that season's `teams` rows
+    already existing, so standings (which populates `teams`) always runs
+    first."""
+    from app.scrape import jobs as scrape_jobs
+
+    result = {}
+    result["standings"] = scrape_jobs.scrape_pull_standings(conn, season_year, league_id)
+    result["draft_results"] = scrape_jobs.scrape_pull_draft_results(conn, season_year, league_id)
+    result["transactions"] = scrape_jobs.scrape_pull_transactions(conn, season_year, league_id)
+    return result
+
+
+def cmd_pull(_args: argparse.Namespace) -> None:
+    """Runs one manual pull of the CURRENT season via browser scraping
+    (app/scrape/) -- Yahoo revoked this app's Fantasy Sports API access,
+    see app/yahoo/client.py's module docstring. The old API-based
+    app.jobs.daily.run_daily_pull is left in place, dormant, for if that
+    ever changes.
+    """
+    config = cfg.load_config()
+    league_id, season_year = _current_scrape_league_and_year(config)
+    conn = database.get_connection()
+    try:
+        result = _scrape_one_season(conn, season_year, league_id)
+        print(result)
+    except Exception as exc:  # noqa: BLE001 - surface clearly at the CLI, including NeedsReloginError
+        print(f"Scrape pull failed: {exc}")
         sys.exit(1)
+    finally:
+        conn.close()
 
 
 def cmd_backfill(args: argparse.Namespace) -> None:
-    from app.jobs.backfill import run_backfill
+    """Recovers season history via browser scraping (app/scrape/) --
+    same rationale as cmd_pull above. `--season` scrapes one season
+    (walking back via the gotoseason form if it isn't the current one);
+    `--all` walks back one season at a time from the current season to
+    2001, stopping as soon as a season has no gotoseason option (that
+    league's first season) rather than hard-failing the whole command.
+    """
+    from app.scrape import season_nav
 
-    season_year = None if args.all else args.season
-    result = run_backfill(season_year=season_year)
+    config = cfg.load_config()
+    sport_path = config.get("yahoo_web_sport_path", cfg.DEFAULT_SPORT_PATH)
+    league_id, current_year = _current_scrape_league_and_year(config)
+    conn = database.get_connection()
+    errors: list[str] = []
+    seasons_done: list[int] = []
+    try:
+        if args.all:
+            year = current_year
+            while year >= 2001:
+                try:
+                    target_league_id = season_nav.resolve_and_cache_season_league_id(config, year, sport_path)
+                except Exception as exc:  # noqa: BLE001 - see docstring
+                    logger.exception("gotoseason resolution failed for season %s", year)
+                    errors.append(f"{year}: {exc}")
+                    break
+                if target_league_id is None:
+                    print(f"No {year} season found for this league -- stopping backfill.")
+                    break
+                try:
+                    _scrape_one_season(conn, year, target_league_id)
+                    seasons_done.append(year)
+                except Exception as exc:  # noqa: BLE001 - one bad season shouldn't kill the whole backfill
+                    logger.exception("Backfill failed for season %s", year)
+                    errors.append(f"{year}: {exc}")
+                year -= 1
+        else:
+            season_year = args.season or current_year
+            target_league_id = (
+                league_id
+                if season_year == current_year
+                else season_nav.resolve_and_cache_season_league_id(config, season_year, sport_path)
+            )
+            if target_league_id is None:
+                print(f"No {season_year} season found for this league.")
+                sys.exit(1)
+            _scrape_one_season(conn, season_year, target_league_id)
+            seasons_done.append(season_year)
+    finally:
+        conn.close()
+
+    result = {"status": "ok" if not errors else "partial", "errors": errors, "seasons": seasons_done}
     print(result)
-    if result["status"] == "error":
+    if not seasons_done and errors:
         sys.exit(1)
+
+
+def cmd_scrape_auth(_args: argparse.Namespace) -> None:
+    """One-time interactive login: opens a real browser window for the
+    user to log into Yahoo (including any 2FA), then saves the session to
+    data/browser_state.json for every future headless scrape to reuse.
+    Mirrors cmd_auth's messaging conventions, but for the browser-scraping
+    path instead of OAuth.
+    """
+    from app.scrape import browser
+
+    print("Opening a browser window for a one-time interactive Yahoo login...")
+    print("(If this is the first run, you may need `playwright install chromium` first.)\n")
+    browser.launch_persistent_session()
+
+    config = cfg.load_config()
+    if not config.get("yahoo_web_league_id") or not config.get("yahoo_web_current_season_year"):
+        print("\nOne more one-time step: edit data/config.json and set:")
+        print('  "yahoo_web_league_id": "<the numeric id in your league\'s URL, e.g. the 74647')
+        print('                          in baseball.fantasysports.yahoo.com/b1/74647/...>"')
+        print('  "yahoo_web_current_season_year": <the season that id currently points to, e.g. 2026>')
+        print("Then run: python -m app scrape-season <year>   (or --all-seasons)")
+    else:
+        print("\nNext steps:")
+        print("  python -m app scrape-season --all-seasons   # recover full history")
+        print("  python -m app pull                          # one manual pull of the current season")
+
+
+def cmd_scrape_season(args: argparse.Namespace) -> None:
+    from app.scrape import season_nav
+
+    config = cfg.load_config()
+    sport_path = config.get("yahoo_web_sport_path", "b1")
+    league_id, current_year = _current_scrape_league_and_year(config)
+    conn = database.get_connection()
+    try:
+        if args.all_seasons:
+            year = current_year
+            results: dict[int, Any] = {}
+            errors: list[str] = []
+            while year >= 2001:
+                try:
+                    target_league_id = season_nav.resolve_and_cache_season_league_id(config, year, sport_path)
+                except Exception as exc:  # noqa: BLE001 - a bad season shouldn't kill the whole walk
+                    logger.exception("gotoseason resolution failed for season %s", year)
+                    errors.append(f"{year}: {exc}")
+                    break
+                if target_league_id is None:
+                    print(f"No {year} season found for this league -- stopping walk-back.")
+                    break
+                print(f"Scraping season {year} (league_id={target_league_id})...")
+                try:
+                    results[year] = _scrape_one_season(conn, year, target_league_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Scrape failed for season %s", year)
+                    errors.append(f"{year}: {exc}")
+                year -= 1
+            print({"seasons": sorted(results), "errors": errors})
+            if not results and errors:
+                sys.exit(1)
+        else:
+            if args.year is None:
+                print("Provide a season year, or pass --all-seasons.")
+                sys.exit(1)
+            target_league_id = (
+                league_id
+                if args.year == current_year
+                else season_nav.resolve_and_cache_season_league_id(config, args.year, sport_path)
+            )
+            if target_league_id is None:
+                print(f"No {args.year} season found for this league.")
+                sys.exit(1)
+            result = _scrape_one_season(conn, args.year, target_league_id)
+            print(result)
+    finally:
+        conn.close()
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
@@ -155,6 +321,16 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
 def cmd_status(_args: argparse.Namespace) -> None:
     config = cfg.load_config()
+    print("-- Browser scraping (app/scrape/) --")
+    print(f"Browser session:   {cfg.has_browser_session()} ({cfg.BROWSER_STATE_PATH})")
+    print(
+        f"League tracked:    {config.get('yahoo_web_league_id')} "
+        f"(season {config.get('yahoo_web_current_season_year')}, sport_path={config.get('yahoo_web_sport_path')})"
+    )
+    print(f"Season slug:       {config.get('yahoo_web_season_slug')}")
+    print(f"Cached season ids: {config.get('scraped_season_league_ids')}")
+    print()
+    print("-- Yahoo API (app/yahoo/, dormant -- see its module docstrings) --")
     print(f"Config dir:      {cfg.DATA_DIR}")
     print(f"Credentials set: {cfg.has_credentials()}")
     print(f"Authenticated:   {cfg.has_tokens()}")
@@ -377,6 +553,19 @@ def main() -> None:
     p_backfill.add_argument("--all", action="store_true", help="Backfill every known season")
     p_backfill.add_argument("--season", type=int, help="Backfill a single season year")
     p_backfill.set_defaults(func=cmd_backfill)
+
+    sub.add_parser(
+        "scrape-auth", help="One-time interactive Yahoo login for browser-based scraping"
+    ).set_defaults(func=cmd_scrape_auth)
+
+    p_scrape_season = sub.add_parser(
+        "scrape-season", help="Scrape standings/draft results/transactions for one or every season"
+    )
+    p_scrape_season.add_argument("year", type=int, nargs="?", help="Season year to scrape")
+    p_scrape_season.add_argument(
+        "--all-seasons", action="store_true", help="Walk back and scrape every season found, to 2001"
+    )
+    p_scrape_season.set_defaults(func=cmd_scrape_season)
 
     p_serve = sub.add_parser("serve", help="Run the daily scheduler + dashboard web server")
     p_serve.add_argument("--host", default="127.0.0.1")

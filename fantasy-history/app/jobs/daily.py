@@ -7,6 +7,12 @@ ON CONFLICT DO UPDATE against natural keys), so this whole job is safe to
 re-run any number of times a day, and a missed day is harmless: weeks
 already stored with status 'postevent' are final and never refetched,
 while any week still in progress gets refetched until it settles.
+
+DORMANT: Yahoo revoked this app's Fantasy Sports API access (every
+endpoint now 403s "This application is not authorized to perform this
+action", confirmed even after a fresh OAuth relogin). `python -m app
+pull`/`backfill` now call app/scrape/jobs.py instead. This module is left
+in place, untouched, in case Yahoo ever restores API access.
 """
 from __future__ import annotations
 

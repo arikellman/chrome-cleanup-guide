@@ -1,0 +1,438 @@
+"""Tests for app/scrape/ -- the browser-scraping replacement for the
+(dormant) Yahoo API path. Fixtures in app/tests/fixtures/scrape/ are
+hand-crafted to mirror the CONFIRMED real structure of Yahoo's own
+standings/draftresults/transactions/league-home pages (see
+app/scrape/parse.py and app/scrape/season_nav.py docstrings for exactly
+what was validated against the real saved pages during development), not
+copies of those multi-MB real files.
+"""
+from __future__ import annotations
+
+import sqlite3
+import unittest
+from pathlib import Path
+
+from app.db import database
+from app.scrape import identity, jobs, parse, season_nav
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scrape"
+
+
+def load(name: str) -> str:
+    with open(FIXTURES / name, encoding="utf-8") as f:
+        return f.read()
+
+
+class TestParseStandings(unittest.TestCase):
+    def setUp(self):
+        self.html = load("standings.html")
+        self.parsed = parse.parse_standings_tables(self.html)
+
+    def test_points_table(self):
+        points = self.parsed["points"]
+        self.assertEqual(len(points), 2)
+        self.assertEqual(points[0]["Rank"], "1")
+        self.assertEqual(points[0]["Team Name"], "Prime Time")
+        self.assertEqual(points[0]["league_id"], "74647")
+        self.assertEqual(points[0]["team_id"], "9")
+        self.assertEqual(points[0]["Total Points"], "60.5")
+
+    def test_truncated_name_uses_title_attribute(self):
+        points = self.parsed["points"]
+        self.assertEqual(points[1]["Team Name"], "Team Grimace (Gri-MAH-Chay)")
+        self.assertEqual(points[1]["team_id"], "2")
+
+    def test_stats_table_has_no_team_link(self):
+        stats = self.parsed["stats"]
+        self.assertEqual(len(stats), 2)
+        self.assertIsNone(stats[0]["team_id"])
+        self.assertEqual(stats[0]["Team Name"], "Prime Time")
+        self.assertEqual(stats[0]["R"], "145")
+
+    def test_duplicate_k_columns_disambiguated(self):
+        stats = self.parsed["stats"]
+        self.assertIn("K", stats[0])
+        self.assertIn("K_2", stats[0])
+        self.assertEqual(stats[0]["K"], "120")  # batting K
+        self.assertEqual(stats[0]["K_2"], "340")  # pitching K
+
+    def test_column_position_types(self):
+        types = self.parsed["column_position_types"]["stats"]
+        self.assertEqual(types["R"], "B")
+        self.assertEqual(types["HR"], "B")
+        self.assertEqual(types["K"], "B")
+        self.assertEqual(types["IP *"], "P")
+        self.assertEqual(types["ERA"], "P")
+        self.assertEqual(types["K_2"], "P")
+        self.assertIsNone(types.get("Rank"))
+        self.assertIsNone(types.get("Team Name"))
+
+
+class TestParseDraftResults(unittest.TestCase):
+    def setUp(self):
+        self.picks = parse.parse_draft_results(load("draft_results.html"))
+
+    def test_pick_count_and_rounds(self):
+        self.assertEqual(len(self.picks), 3)
+        self.assertEqual({p["round"] for p in self.picks}, {1, 2})
+
+    def test_first_pick(self):
+        pick = self.picks[0]
+        self.assertEqual(pick["round"], 1)
+        self.assertEqual(pick["pick_in_round"], 1)
+        self.assertEqual(pick["player_yahoo_id"], "9877")
+        self.assertEqual(pick["player_name"], "Aaron Judge")
+        self.assertEqual(pick["mlb_team"], "NYY")
+        self.assertEqual(pick["position"], "OF")
+        self.assertEqual(pick["team_name"], "Backcrackers")
+
+    def test_two_way_player_batter_suffix_stripped(self):
+        pick = self.picks[1]
+        self.assertEqual(pick["player_name"], "Shohei Ohtani")
+        self.assertEqual(pick["mlb_team"], "LAD")
+        self.assertEqual(pick["position"], "Util")
+
+    def test_truncated_team_name_uses_title(self):
+        pick = self.picks[1]
+        self.assertEqual(pick["team_name"], "Team Grimace (Gri-MAH-Chay)")
+
+    def test_name_with_period_parses(self):
+        pick = self.picks[2]
+        self.assertEqual(pick["player_name"], "Bobby Witt Jr.")
+        self.assertEqual(pick["mlb_team"], "KC")
+        self.assertEqual(pick["position"], "SS")
+
+
+class TestParseTransactions(unittest.TestCase):
+    def setUp(self):
+        self.txs = parse.parse_transactions(load("transactions.html"))
+
+    def test_row_count(self):
+        self.assertEqual(len(self.txs), 3)
+
+    def test_extension_split_name_recombined_with_space(self):
+        # Confirmed real quirk: a browser extension injects markup INSIDE
+        # the player-name <a>, splitting text into fragments ("Jung" /
+        # "Hoo" / "Lee") that bs4's default get_text(strip=True) would
+        # silently mangle into "JungHooLee". get_text(" ", strip=True) is
+        # what recovers the correct "Jung Hoo Lee".
+        tx = self.txs[0]
+        self.assertEqual(tx["players"][0]["player_name"], "Jung Hoo Lee")
+        self.assertEqual(tx["players"][0]["player_yahoo_id"], "63494")
+        self.assertEqual(tx["players"][0]["movement"], "add")
+        self.assertEqual(tx["players"][1]["player_name"], "Dylan Crews")
+        self.assertEqual(tx["players"][1]["movement"], "drop")
+        self.assertEqual(tx["team_id"], "11")
+        self.assertEqual(tx["team_name"], "The Ghost of Elvis Past")
+        self.assertEqual(tx["timestamp_text"], "Aug 7, 11:41 am")
+
+    def test_cost_prefix_parsed(self):
+        tx = self.txs[1]
+        added = tx["players"][0]
+        self.assertEqual(added["movement"], "add")
+        self.assertEqual(added["cost"], 1)
+        dropped = tx["players"][1]
+        self.assertEqual(dropped["movement"], "drop")
+        self.assertIsNone(dropped["cost"])
+
+    def test_add_only_row_no_drop(self):
+        tx = self.txs[2]
+        self.assertEqual(len(tx["players"]), 1)
+        self.assertEqual(tx["players"][0]["player_name"], "Tanner Bibee")
+        self.assertEqual(tx["players"][0]["cost"], 2)
+
+    def test_position_and_mlb_team_split(self):
+        tx = self.txs[0]
+        self.assertEqual(tx["players"][0]["mlb_team"], "SF")
+        self.assertEqual(tx["players"][0]["position"], "OF")
+
+
+class TestSeasonNav(unittest.TestCase):
+    def setUp(self):
+        self.html = load("league_home.html")
+
+    def test_extract_season_slug(self):
+        slug, options = season_nav.extract_season_slug(self.html)
+        self.assertEqual(slug, "kippahs")
+        self.assertEqual(options[2026], "2026_kippahs")
+        self.assertEqual(options[2001], "2001_kippahs")
+
+    def test_gotoseason_form_action(self):
+        action = season_nav.gotoseason_form_action(self.html)
+        self.assertEqual(action, "https://baseball.fantasysports.yahoo.com/b1/74647/gotoseason")
+
+    def test_league_id_from_url(self):
+        self.assertEqual(
+            season_nav.league_id_from_url("https://baseball.fantasysports.yahoo.com/b1/12345/standings"),
+            "12345",
+        )
+        self.assertEqual(
+            season_nav.league_id_from_url("https://baseball.fantasysports.yahoo.com/b1/12345"), "12345"
+        )
+        self.assertIsNone(season_nav.league_id_from_url("https://login.yahoo.com/whatever"))
+
+    def test_missing_select_raises(self):
+        with self.assertRaises(ValueError):
+            season_nav.extract_season_slug("<html><body>no select here</body></html>")
+
+
+class TestIdentity(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_normalize_stat_column(self):
+        self.assertEqual(identity.normalize_stat_column("GP *"), ("GP", True))
+        self.assertEqual(identity.normalize_stat_column("IP *"), ("IP", True))
+        self.assertEqual(identity.normalize_stat_column("K_2"), ("K", False))
+        self.assertEqual(identity.normalize_stat_column("HR"), ("HR", False))
+
+    def test_resolve_team_key_reuses_existing_api_era_row(self):
+        database.upsert_teams(
+            self.conn,
+            [
+                {
+                    "season_year": 2026,
+                    "team_key": "469.l.74647.t.9",
+                    "team_id": "9",
+                    "name": "Prime Time",
+                    "logo_url": None,
+                    "manager_nickname": None,
+                    "manager_guid": None,
+                    "manager_key": None,
+                    "division_id": None,
+                    "faab_balance": None,
+                    "waiver_priority": None,
+                    "number_of_moves": None,
+                    "number_of_trades": None,
+                }
+            ],
+        )
+        key = identity.resolve_team_key(self.conn, 2026, "74647", "9")
+        self.assertEqual(key, "469.l.74647.t.9")
+
+    def test_resolve_team_key_synthesizes_for_unseen_season(self):
+        key = identity.resolve_team_key(self.conn, 2015, "74647", "3", name="Birds & the Beezers")
+        self.assertEqual(key, "74647.t.3")
+        row = self.conn.execute(
+            "SELECT name FROM teams WHERE team_key = ?", (key,)
+        ).fetchone()
+        self.assertEqual(row["name"], "Birds & the Beezers")
+
+    def test_resolve_team_key_is_idempotent(self):
+        key1 = identity.resolve_team_key(self.conn, 2015, "74647", "3", name="Birds & the Beezers")
+        key2 = identity.resolve_team_key(self.conn, 2015, "74647", "3", name="Birds & the Beezers")
+        self.assertEqual(key1, key2)
+        count = self.conn.execute("SELECT COUNT(*) AS c FROM teams WHERE team_key = ?", (key1,)).fetchone()["c"]
+        self.assertEqual(count, 1)
+
+    def test_resolve_stat_id_reuses_existing_api_era_row(self):
+        database.upsert_stat_categories(
+            self.conn,
+            [
+                {
+                    "season_year": 2026,
+                    "stat_id": 7,
+                    "name": "R",
+                    "display_name": "R",
+                    "sort_order": 1,
+                    "display_order": 0,
+                    "is_display_only": 0,
+                    "position_type": "B",
+                }
+            ],
+        )
+        stat_id = identity.resolve_stat_id(self.conn, 2026, "R", "B")
+        self.assertEqual(stat_id, 7)
+
+    def test_resolve_stat_id_synthesizes_starting_at_9000(self):
+        stat_id = identity.resolve_stat_id(self.conn, 2015, "HR", "B")
+        self.assertEqual(stat_id, 9000)
+        row = self.conn.execute(
+            "SELECT sort_order, position_type FROM stat_categories WHERE season_year = ? AND stat_id = ?",
+            (2015, stat_id),
+        ).fetchone()
+        self.assertEqual(row["position_type"], "B")
+        self.assertEqual(row["sort_order"], 1)
+
+    def test_resolve_stat_id_increments_and_is_idempotent(self):
+        first = identity.resolve_stat_id(self.conn, 2015, "HR", "B")
+        second = identity.resolve_stat_id(self.conn, 2015, "RBI", "B")
+        self.assertEqual(second, first + 1)
+        # Re-resolving the same (display_name, position_type) reuses it,
+        # doesn't allocate a new id.
+        again = identity.resolve_stat_id(self.conn, 2015, "HR", "B")
+        self.assertEqual(again, first)
+
+    def test_resolve_stat_id_lower_is_better_categories(self):
+        era_id = identity.resolve_stat_id(self.conn, 2015, "ERA", "P")
+        batting_k_id = identity.resolve_stat_id(self.conn, 2015, "K", "B")
+        pitching_k_id = identity.resolve_stat_id(self.conn, 2015, "K", "P")
+        era_row = self.conn.execute(
+            "SELECT sort_order FROM stat_categories WHERE season_year = ? AND stat_id = ?", (2015, era_id)
+        ).fetchone()
+        batting_k_row = self.conn.execute(
+            "SELECT sort_order FROM stat_categories WHERE season_year = ? AND stat_id = ?",
+            (2015, batting_k_id),
+        ).fetchone()
+        pitching_k_row = self.conn.execute(
+            "SELECT sort_order FROM stat_categories WHERE season_year = ? AND stat_id = ?",
+            (2015, pitching_k_id),
+        ).fetchone()
+        self.assertEqual(era_row["sort_order"], 0)
+        self.assertEqual(batting_k_row["sort_order"], 0)
+        self.assertEqual(pitching_k_row["sort_order"], 1)
+
+    def test_synthesize_transaction_key_deterministic_and_order_independent(self):
+        key1 = identity.synthesize_transaction_key(2026, "11", "Aug 7, 11:41 am", ["63494", "62971"])
+        key2 = identity.synthesize_transaction_key(2026, "11", "Aug 7, 11:41 am", ["62971", "63494"])
+        self.assertEqual(key1, key2)
+        key3 = identity.synthesize_transaction_key(2026, "7", "Aug 7, 11:41 am", ["10843", "11914"])
+        self.assertNotEqual(key1, key3)
+
+
+class TestIngestStandings(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_ingest_writes_teams_standings_and_stats(self):
+        result = jobs.ingest_standings_html(self.conn, load("standings.html"), 2015, "74647")
+        self.assertEqual(result["teams"], 2)
+
+        teams = self.conn.execute("SELECT team_id, name, team_key FROM teams WHERE season_year = ? ORDER BY team_id", (2015,)).fetchall()
+        self.assertEqual(len(teams), 2)
+        team_ids = {t["team_id"] for t in teams}
+        self.assertEqual(team_ids, {"9", "2"})
+
+        snap = self.conn.execute(
+            "SELECT rank, points_for FROM standings_snapshots WHERE season_year = ? AND team_key = ?",
+            (2015, "74647.t.9"),
+        ).fetchone()
+        self.assertEqual(snap["rank"], 1)
+        self.assertAlmostEqual(snap["points_for"], 60.5)
+
+        # Raw per-category totals from the "stats" table land in
+        # team_stat_snapshots, NOT the "points" table's roto-point values
+        # (see ingest_standings_html's docstring for why).
+        stat_row = self.conn.execute(
+            """
+            SELECT tss.value FROM team_stat_snapshots tss
+            JOIN stat_categories sc ON sc.season_year = tss.season_year AND sc.stat_id = tss.stat_id
+            WHERE tss.season_year = ? AND tss.team_key = ? AND sc.display_name = 'R' AND sc.position_type = 'B'
+            """,
+            (2015, "74647.t.9"),
+        ).fetchone()
+        self.assertEqual(stat_row["value"], "145")
+
+    def test_ingest_is_idempotent_on_teams(self):
+        jobs.ingest_standings_html(self.conn, load("standings.html"), 2015, "74647")
+        jobs.ingest_standings_html(self.conn, load("standings.html"), 2015, "74647")
+        count = self.conn.execute("SELECT COUNT(*) AS c FROM teams WHERE season_year = ?", (2015,)).fetchone()["c"]
+        self.assertEqual(count, 2)
+
+
+class TestIngestDraftResults(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+        # Draft results are matched to teams by name -- seed teams first,
+        # the way scrape_pull_draft_results expects standings to have run
+        # already for the same season.
+        database.upsert_teams(
+            self.conn,
+            [
+                {
+                    "season_year": 2015, "team_key": "74647.t.1", "team_id": "1",
+                    "name": "Backcrackers", "logo_url": None, "manager_nickname": None,
+                    "manager_guid": None, "manager_key": None, "division_id": None,
+                    "faab_balance": None, "waiver_priority": None, "number_of_moves": None,
+                    "number_of_trades": None,
+                },
+                {
+                    "season_year": 2015, "team_key": "74647.t.2", "team_id": "2",
+                    "name": "Team Grimace (Gri-MAH-Chay)", "logo_url": None, "manager_nickname": None,
+                    "manager_guid": None, "manager_key": None, "division_id": None,
+                    "faab_balance": None, "waiver_priority": None, "number_of_moves": None,
+                    "number_of_trades": None,
+                },
+            ],
+        )
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_ingest_resolves_team_by_name_and_computes_overall_pick(self):
+        result = jobs.ingest_draft_results_html(self.conn, load("draft_results.html"), 2015, "74647")
+        self.assertEqual(result["picks"], 3)
+        self.assertEqual(result["skipped"], 0)
+
+        rows = self.conn.execute(
+            "SELECT pick, round, team_key, player_key FROM draft_picks WHERE season_year = ? ORDER BY pick",
+            (2015,),
+        ).fetchall()
+        self.assertEqual(rows[0]["pick"], 1)
+        self.assertEqual(rows[0]["round"], 1)
+        self.assertEqual(rows[0]["team_key"], "74647.t.1")
+        self.assertEqual(rows[0]["player_key"], "mlb.p.9877")
+        # 2 teams on file -> round 2 pick 1 is overall pick 3 (round-1)*2+1
+        self.assertEqual(rows[2]["pick"], 3)
+        self.assertEqual(rows[2]["round"], 2)
+
+
+class TestIngestTransactions(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_ingest_writes_transactions_and_players(self):
+        result = jobs.ingest_transactions_html(self.conn, load("transactions.html"), 2026, "74647")
+        self.assertEqual(result["transactions"], 3)
+        self.assertEqual(result["players"], 5)  # 2 + 2 + 1
+
+        tx_types = {
+            r["type"]
+            for r in self.conn.execute("SELECT type FROM transactions WHERE season_year = ?", (2026,)).fetchall()
+        }
+        self.assertIn("add/drop", tx_types)
+        self.assertIn("add", tx_types)
+
+        player_row = self.conn.execute(
+            "SELECT player_name, movement, dest_team_key, source_team_key FROM transaction_players "
+            "WHERE player_key = 'mlb.p.63494'"
+        ).fetchone()
+        self.assertEqual(player_row["player_name"], "Jung Hoo Lee")
+        self.assertEqual(player_row["movement"], "add")
+        self.assertEqual(player_row["dest_team_key"], "74647.t.11")
+        self.assertIsNone(player_row["source_team_key"])
+
+        dropped_row = self.conn.execute(
+            "SELECT movement, source_team_key, dest_team_key FROM transaction_players "
+            "WHERE player_key = 'mlb.p.62971'"
+        ).fetchone()
+        self.assertEqual(dropped_row["movement"], "drop")
+        self.assertEqual(dropped_row["source_team_key"], "74647.t.11")
+        self.assertIsNone(dropped_row["dest_team_key"])
+
+    def test_ingest_is_idempotent(self):
+        jobs.ingest_transactions_html(self.conn, load("transactions.html"), 2026, "74647")
+        jobs.ingest_transactions_html(self.conn, load("transactions.html"), 2026, "74647")
+        count = self.conn.execute("SELECT COUNT(*) AS c FROM transactions WHERE season_year = ?", (2026,)).fetchone()["c"]
+        self.assertEqual(count, 3)
+
+
+if __name__ == "__main__":
+    unittest.main()

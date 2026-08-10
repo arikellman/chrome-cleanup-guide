@@ -1,3 +1,11 @@
 flask>=3.0,<4.0
 requests>=2.31,<3.0
 apscheduler>=3.10,<4.0
+
+# app/scrape/ -- browser-based scraping of Yahoo Fantasy's website
+# (Yahoo revoked this app's Fantasy Sports API access; app/yahoo/ is kept
+# but dormant -- see app/scrape/__init__.py). After installing, run
+# `playwright install chromium` once to fetch the browser binary.
+playwright>=1.40,<2.0
+beautifulsoup4>=4.12,<5.0
+lxml>=5.0,<6.0

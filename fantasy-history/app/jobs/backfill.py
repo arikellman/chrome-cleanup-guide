@@ -2,6 +2,11 @@
 prior-season league keys discovered at auth time -- the feature that
 brings back what Yahoo's UI hides. Safe to re-run and resumable: weeks
 already stored as 'postevent' are never refetched (see daily.pull_scoreboards).
+
+DORMANT: Yahoo revoked this app's Fantasy Sports API access (see
+app/jobs/daily.py's module docstring). `python -m app backfill` now calls
+app/scrape/jobs.py's season-walk-back instead. Left in place untouched in
+case Yahoo ever restores API access.
 """
 from __future__ import annotations
 

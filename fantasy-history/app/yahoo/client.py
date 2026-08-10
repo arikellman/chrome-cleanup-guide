@@ -4,6 +4,12 @@ Handles: bearer auth (via oauth.ensure_valid_token), a simple request
 throttle, retry-with-backoff on transient failures, one automatic
 token-refresh-and-retry on 401, and persisting every raw response body
 into raw_responses so parsing bugs can be fixed later without re-fetching.
+
+DORMANT: Yahoo revoked this app's Fantasy Sports API access -- every
+endpoint now 403s "This application is not authorized to perform this
+action", confirmed even after a fresh OAuth relogin. See app/scrape/ for
+the browser-scraping replacement now used by `python -m app pull`/
+`backfill`. Left in place untouched in case Yahoo ever restores access.
 """
 from __future__ import annotations
 
