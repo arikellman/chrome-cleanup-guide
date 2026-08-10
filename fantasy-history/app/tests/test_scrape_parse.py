@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from app.db import database
@@ -193,6 +194,29 @@ class TestSeasonNav(unittest.TestCase):
 
     def test_base_url_from_redirect_no_match(self):
         self.assertIsNone(season_nav.base_url_from_redirect("https://login.yahoo.com/whatever"))
+
+    def test_resolve_and_cache_self_heals_legacy_bare_string_cache_entry(self):
+        # Confirmed against a real data/config.json left over from before
+        # base_url was added to the cache: a bare league_id string under
+        # scraped_season_league_ids (this file is gitignored, so old
+        # cached state can outlive whatever code wrote it) used to crash
+        # every caller expecting a dict.
+        config = {
+            "yahoo_web_league_id": "74647",
+            "yahoo_web_current_season_year": 2026,
+            "scraped_season_league_ids": {"2026": "74647"},
+        }
+        # Patch out the real file write -- resolve_and_cache_season_league_id
+        # calls cfg.save_config(config) unconditionally on a self-heal, and
+        # that writes to the real data/config.json on disk; a unit test
+        # must never touch a real user's config file.
+        with unittest.mock.patch("app.scrape.season_nav.cfg.save_config"):
+            result = season_nav.resolve_and_cache_season_league_id(config, 2026, "b1")
+        self.assertEqual(
+            result, {"league_id": "74647", "base_url": "https://baseball.fantasysports.yahoo.com/b1/74647"}
+        )
+        # Self-healed in place, so a second call doesn't re-migrate.
+        self.assertEqual(config["scraped_season_league_ids"]["2026"], result)
 
 
 class TestIdentity(unittest.TestCase):

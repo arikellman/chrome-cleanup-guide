@@ -163,7 +163,24 @@ def resolve_and_cache_season_league_id(
     cache = config.setdefault("scraped_season_league_ids", {})
     key = str(season_year)
     if key in cache:
-        return cache[key]
+        cached = cache[key]
+        if isinstance(cached, dict):
+            return cached
+        # Self-heal a legacy cache entry: an earlier version of this cache
+        # stored a bare league_id string instead of {"league_id",
+        # "base_url"} -- confirmed against a real data/config.json left
+        # over from before base_url was added (this file is gitignored, so
+        # old cached state outlives whatever code wrote it). The only code
+        # path that could have written a bare string was the
+        # current-season short-circuit below, which always used the
+        # no-year-prefix default template -- safe to reconstruct here.
+        migrated = {
+            "league_id": cached,
+            "base_url": _league_home_url(cached, config.get("yahoo_web_sport_path", "b1")),
+        }
+        cache[key] = migrated
+        cfg.save_config(config)
+        return migrated
 
     current_league_id = config.get("yahoo_web_league_id")
     current_season_year = config.get("yahoo_web_current_season_year")
