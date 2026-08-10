@@ -116,6 +116,35 @@ def ingest_standings_html(conn, html: str, season_year: int, league_id: str) -> 
     parsed = parse.parse_standings_tables(html)
     snapshot_date = dt.date.today().isoformat()
 
+    # The dashboard's season picker (and every /api/* endpoint's "latest
+    # season" default) reads from the `seasons` table, not from the
+    # presence of teams/standings rows -- confirmed real: scraping wrote
+    # a full season's worth of teams/standings/stats/draft/transactions
+    # data without ever touching `seasons`, so none of it was reachable
+    # from the dashboard at all. game_key/league_key are the (dormant)
+    # API's own identifiers with no scraped equivalent -- synthesized
+    # here so the NOT NULL/UNIQUE constraints are satisfied without
+    # colliding with any real API-era value for this or another season.
+    # scoring_type is hardcoded "roto" since that's confirmed true for
+    # this league across every season scraped so far -- if a scraped
+    # league is ever NOT roto-scored throughout its history, this would
+    # need to come from the page itself instead. Deliberately only sets
+    # the columns above: the CURRENT season may already have real
+    # league_name/start_date/end_date/is_finished/etc. from the (dormant)
+    # API era, and _upsert only touches columns present in this dict --
+    # omitting the rest leaves those existing good values alone instead
+    # of clobbering them with NULL on every scrape.
+    database.upsert_season(
+        conn,
+        {
+            "season_year": season_year,
+            "game_key": "scrape",
+            "league_key": f"scrape.{league_id}",
+            "num_teams": len(parsed["points"]) or None,
+            "scoring_type": "roto",
+        },
+    )
+
     team_key_by_name: dict[str, str] = {}
     standings_rows = []
     for row in parsed["points"]:

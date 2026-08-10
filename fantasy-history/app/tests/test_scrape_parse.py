@@ -432,6 +432,42 @@ class TestIngestStandings(unittest.TestCase):
         count = self.conn.execute("SELECT COUNT(*) AS c FROM teams WHERE season_year = ?", (2015,)).fetchone()["c"]
         self.assertEqual(count, 2)
 
+    def test_ingest_writes_a_seasons_row(self):
+        # Confirmed real: a season's worth of teams/standings/stats data
+        # scraped with no corresponding `seasons` row is invisible to the
+        # dashboard entirely (its season picker, and every /api/*
+        # endpoint's "latest season" default, read from `seasons`, not
+        # from the presence of data in other tables).
+        jobs.ingest_standings_html(self.conn, load("standings.html"), 2015, "74647")
+        season = self.conn.execute(
+            "SELECT num_teams, scoring_type FROM seasons WHERE season_year = ?", (2015,)
+        ).fetchone()
+        self.assertIsNotNone(season)
+        self.assertEqual(season["num_teams"], 2)
+        self.assertEqual(season["scoring_type"], "roto")
+
+    def test_ingest_does_not_clobber_existing_season_metadata(self):
+        # A season already on file (e.g. from the dormant API era) may
+        # have real league_name/is_finished/etc. that scraping has no way
+        # to fill in itself -- the seasons upsert must not overwrite those
+        # with NULL just because this pass doesn't know them.
+        database.upsert_season(
+            self.conn,
+            {
+                "season_year": 2015,
+                "game_key": "469",
+                "league_key": "469.l.74647",
+                "league_name": "Kippah",
+                "is_finished": 1,
+            },
+        )
+        jobs.ingest_standings_html(self.conn, load("standings.html"), 2015, "74647")
+        season = self.conn.execute(
+            "SELECT league_name, is_finished FROM seasons WHERE season_year = ?", (2015,)
+        ).fetchone()
+        self.assertEqual(season["league_name"], "Kippah")
+        self.assertEqual(season["is_finished"], 1)
+
 
 class TestIngestDraftResults(unittest.TestCase):
     def setUp(self):
