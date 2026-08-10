@@ -218,6 +218,40 @@ class TestSeasonNav(unittest.TestCase):
         # Self-healed in place, so a second call doesn't re-migrate.
         self.assertEqual(config["scraped_season_league_ids"]["2026"], result)
 
+    def test_resolve_and_cache_self_heals_historical_season_with_sport_path_override(self):
+        # Confirmed against a real user-supplied config.json: a user can
+        # populate scraped_season_league_ids by hand from their own
+        # browsing (bare league_id strings for many past seasons), for a
+        # season whose sport path differs from the league's usual one
+        # (confirmed real: 2007-2009 use "b2" for this league). The
+        # self-heal must build the year-prefixed form (this ISN'T the
+        # current season) using that season's sport-path override, not
+        # assume "b1" or the no-year-prefix current-season form.
+        config = {
+            "yahoo_web_league_id": "74647",
+            "yahoo_web_current_season_year": 2026,
+            "yahoo_web_sport_path": "b1",
+            "scraped_season_league_ids": {"2007": "3228"},
+            "scraped_season_sport_paths": {"2007": "b2"},
+        }
+        with unittest.mock.patch("app.scrape.season_nav.cfg.save_config"):
+            result = season_nav.resolve_and_cache_season_league_id(config, 2007, "b1")
+        self.assertEqual(
+            result,
+            {"league_id": "3228", "base_url": "https://baseball.fantasysports.yahoo.com/2007/b2/3228"},
+        )
+
+    def test_sport_path_for_season_override_and_default(self):
+        config = {"yahoo_web_sport_path": "b1", "scraped_season_sport_paths": {"2008": "b2"}}
+        self.assertEqual(season_nav.sport_path_for_season(config, 2008, "b1"), "b2")
+        self.assertEqual(season_nav.sport_path_for_season(config, 2020, "b1"), "b1")
+
+    def test_league_id_from_url_matches_non_b1_sport_path(self):
+        self.assertEqual(
+            season_nav.league_id_from_url("https://baseball.fantasysports.yahoo.com/2008/b2/6520/standings"),
+            "6520",
+        )
+
 
 class TestIdentity(unittest.TestCase):
     def setUp(self):

@@ -89,11 +89,27 @@ def load_config() -> dict[str, Any]:
     #                           confirmed varies live, see
     #                           season_nav.BASE_URL_RE) and is what every
     #                           page fetch for that season is built from.
+    #                           Entries here can be a bare league_id string
+    #                           (self-healed into the dict shape on read --
+    #                           see season_nav.resolve_and_cache_season_league_id)
+    #                           if you've found a season's league_id
+    #                           yourself by browsing and want to seed it by
+    #                           hand rather than waiting for the gotoseason
+    #                           walk-back to reach it.
+    #   scraped_season_sport_paths: {season_year: sport_path} overrides for
+    #                           seasons whose sport path differs from
+    #                           yahoo_web_sport_path -- confirmed real, this
+    #                           league's own history uses "b2" for at least
+    #                           2007-2009 rather than "b1" everywhere else.
+    #                           Only needed for seasons where it actually
+    #                           differs; everything else falls back to
+    #                           yahoo_web_sport_path.
     config.setdefault("yahoo_web_league_id", None)
     config.setdefault("yahoo_web_current_season_year", None)
     config.setdefault("yahoo_web_season_slug", None)
     config.setdefault("yahoo_web_sport_path", DEFAULT_SPORT_PATH)
     config.setdefault("scraped_season_league_ids", {})
+    config.setdefault("scraped_season_sport_paths", {})
     return config
 
 

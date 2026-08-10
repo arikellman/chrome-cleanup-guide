@@ -30,7 +30,15 @@ from app.scrape import browser
 logger = logging.getLogger(__name__)
 
 SEASON_OPTION_RE = re.compile(r"^(\d{4})_(.+)$")
-LEAGUE_ID_IN_URL_RE = re.compile(r"/b1/(\d+)(?:[/?]|$)")
+# Confirmed against a real user-supplied config: this league's sport path
+# isn't constant across all its history -- at least 2007-2009 use "b2"
+# rather than the "b1" every other observed season (including current)
+# uses. The two regexes below must therefore match ANY "b<digits>"
+# segment, never hardcode "b1" -- confirmed necessary, since a
+# "b1"-only pattern would silently fail to extract a league_id at all
+# for a season using a different sport path, well before even getting to
+# the year-prefix question these regexes were originally written for.
+LEAGUE_ID_IN_URL_RE = re.compile(r"/b\d+/(\d+)(?:[/?]|$)")
 # Confirmed live across FIVE different non-current seasons now (2001,
 # 2003, 2004, 2005, AND 2025 -- so this is not just an "ancient seasons"
 # quirk, it's every non-current season): the real, working URL always has
@@ -47,7 +55,7 @@ LEAGUE_ID_IN_URL_RE = re.compile(r"/b1/(\d+)(?:[/?]|$)")
 # not read off the redirect. base_url_from_redirect/BASE_URL_RE are kept
 # only as a diagnostic cross-check (logged if it disagrees), in case this
 # rule is ever wrong for some future season.
-BASE_URL_RE = re.compile(r"^(https?://[^/]+(?:/\d{4})?/b1/\d+)")
+BASE_URL_RE = re.compile(r"^(https?://[^/]+(?:/\d{4})?/b\d+/\d+)")
 
 
 def _league_home_url(league_id: str, sport_path: str) -> str:
@@ -55,6 +63,17 @@ def _league_home_url(league_id: str, sport_path: str) -> str:
     # (rather than imported) to avoid a season_nav<->jobs import cycle,
     # since jobs.py orchestrates season walk-back BY CALLING this module.
     return f"https://baseball.fantasysports.yahoo.com/{sport_path}/{league_id}"
+
+
+def sport_path_for_season(config: dict[str, Any], season_year: int, default_sport_path: str) -> str:
+    """Looks up a per-season sport-path override in
+    `config["scraped_season_sport_paths"]` (a user-maintained map,
+    confirmed real: this league's own history uses "b2" for at least
+    2007-2009 rather than "b1" like every other observed season),
+    falling back to `default_sport_path` when there's no override for
+    this season."""
+    overrides = config.get("scraped_season_sport_paths") or {}
+    return overrides.get(str(season_year), default_sport_path)
 
 
 def extract_season_slug(html: str) -> tuple[str, dict[int, str]]:
@@ -188,18 +207,23 @@ def resolve_and_cache_season_league_id(
         cached = cache[key]
         if isinstance(cached, dict):
             return cached
-        # Self-heal a legacy cache entry: an earlier version of this cache
-        # stored a bare league_id string instead of {"league_id",
-        # "base_url"} -- confirmed against a real data/config.json left
-        # over from before base_url was added (this file is gitignored, so
-        # old cached state outlives whatever code wrote it). The only code
-        # path that could have written a bare string was the
-        # current-season short-circuit below, which always used the
-        # no-year-prefix default template -- safe to reconstruct here.
-        migrated = {
-            "league_id": cached,
-            "base_url": _league_home_url(cached, config.get("yahoo_web_sport_path", "b1")),
-        }
+        # Self-heal a legacy cache entry: a bare league_id string instead
+        # of {"league_id", "base_url"} -- confirmed against a real
+        # data/config.json left over from before base_url was added (this
+        # file is gitignored, so old cached state outlives whatever code
+        # wrote it). Unlike the very first version of this self-heal, this
+        # does NOT assume it's the current season (a user populating this
+        # cache by hand from their own browsing turned out to be a real
+        # case) -- build the year-prefixed form for any non-current
+        # season, using this season's sport-path override if one exists.
+        current_season_year = config.get("yahoo_web_current_season_year")
+        default_sport_path = config.get("yahoo_web_sport_path", "b1")
+        season_sport_path = sport_path_for_season(config, season_year, default_sport_path)
+        if season_year == current_season_year:
+            base_url = _league_home_url(cached, season_sport_path)
+        else:
+            base_url = f"https://baseball.fantasysports.yahoo.com/{season_year}/{season_sport_path}/{cached}"
+        migrated = {"league_id": cached, "base_url": base_url}
         cache[key] = migrated
         cfg.save_config(config)
         return migrated
@@ -216,7 +240,13 @@ def resolve_and_cache_season_league_id(
         cfg.save_config(config)
         return result
 
+    # `sport_path` here navigates to the CURRENT season's own league home
+    # page (always correct for that, since it's the season already
+    # configured), but the TARGET season being resolved may need a
+    # different sport path -- confirmed real, at least 2007-2009 use "b2"
+    # -- so look that up separately for constructing ITS base_url.
     home_url = _league_home_url(current_league_id, sport_path)
+    target_sport_path = sport_path_for_season(config, season_year, sport_path)
 
     def _do(page: Any) -> tuple[str, str] | None:
         page.goto(home_url, wait_until="domcontentloaded")
@@ -230,7 +260,7 @@ def resolve_and_cache_season_league_id(
             logger.info("Season %s has no gotoseason option for this league -- stopping walk-back", season_year)
             return None
         form_action = gotoseason_form_action(html)
-        return resolve_season_league_id(page, form_action, option_value, season_year, sport_path)
+        return resolve_season_league_id(page, form_action, option_value, season_year, target_sport_path)
 
     resolved = browser.run_with_page(_do)
     if resolved is None:
