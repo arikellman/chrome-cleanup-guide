@@ -657,6 +657,40 @@ class TestIngestTeamDailyTotals(unittest.TestCase):
         ).fetchone()["c"]
         self.assertEqual(count, 14)
 
+    def test_failed_team_day_leaves_no_partial_rows(self):
+        # A team-day whose fetch/parse comes back empty (e.g. the
+        # wait_selector timeout case in app.scrape.browser.fetch_page)
+        # must write zero rows, not a partial set -- this is what makes
+        # per-(team, date) resumability correct: a failed team-day has NO
+        # rows in team_daily_stat_deltas, so it looks identical to "never
+        # attempted" and is naturally retried, no special "force" flag
+        # needed.
+        result = jobs.ingest_team_daily_totals_html(self.conn, "<html></html>", 2026, "74647.t.9", "2026-08-08")
+        self.assertEqual(result["stat_rows"], 0)
+        count = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM team_daily_stat_deltas WHERE team_key = '74647.t.9'"
+        ).fetchone()["c"]
+        self.assertEqual(count, 0)
+
+
+class TestStoredDailyStatDeltaTeamDates(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_tracks_coverage_per_team_not_just_per_date(self):
+        # Confirmed real: team 9 succeeded on 2026-07-29 but team 8 didn't
+        # -- per-date-only resumability would treat 2026-07-29 as fully
+        # covered (it has SOME rows) and skip team 8 forever.
+        jobs.ingest_team_daily_totals_html(self.conn, load("team_daily.html"), 2026, "74647.t.9", "2026-07-29")
+        covered = database.stored_daily_stat_delta_team_dates(self.conn, 2026)
+        self.assertIn(("74647.t.9", "2026-07-29"), covered)
+        self.assertNotIn(("74647.t.8", "2026-07-29"), covered)
+
 
 if __name__ == "__main__":
     unittest.main()

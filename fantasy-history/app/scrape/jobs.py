@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import time
 from typing import Any
 
 from app.db import database
@@ -522,22 +523,35 @@ def scrape_backfill_daily_stats(
     *,
     base_url: str | None = None,
     progress_every: int = 5,
+    throttle_seconds: float = 1.5,
 ) -> dict[str, Any]:
     """Walks every day in [start_date, end_date] (inclusive, ISO
     "YYYY-MM-DD" strings) for every team already on file for this
     season, scraping that team's single-day totals via the ?date= "date
-    hack" -- resumable and idempotent: days already fully covered (per
-    database.stored_daily_stat_delta_dates) are skipped entirely, so
-    re-running only ever fetches what's actually missing, same as the
-    dormant API-era app.jobs.backfill.backfill_daily_stat_deltas this
-    replaces.
+    hack".
+
+    Resumable per (team, date) pair, not just per date -- confirmed real
+    that a transient failure can hit only one or two teams on an
+    otherwise-successful day, and date-only resumability would then skip
+    that whole date forever on every future run since it already has SOME
+    rows, silently leaving those specific teams' data missing. A failed
+    team-day writes no rows at all (ingest is a no-op on an empty parse),
+    so it's naturally retried on the next run without needing any special
+    "force" flag.
+
+    Throttled: confirmed real that back-to-back fetches with no pause
+    between them (a season's worth of team-day pages is potentially
+    hundreds of requests) triggers failures partway through a run that
+    weren't happening for the first few days -- sleeps `throttle_seconds`
+    between every team-day fetch, same "be polite to Yahoo" spirit as the
+    dormant API client's own MIN_REQUEST_INTERVAL throttle.
     """
     teams = _rows(conn.execute("SELECT team_key, team_id FROM teams WHERE season_year = ?", (season_year,)))
     if not teams:
         raise RuntimeError(
             f"No teams on file for season {season_year} -- run a standings scrape for this season first."
         )
-    already = database.stored_daily_stat_delta_dates(conn, season_year)
+    already = database.stored_daily_stat_delta_team_dates(conn, season_year)
 
     start = dt.date.fromisoformat(start_date)
     end = dt.date.fromisoformat(end_date)
@@ -547,16 +561,18 @@ def scrape_backfill_daily_stats(
     current = start
     while current <= end:
         date_str = current.isoformat()
-        if date_str not in already:
-            for team in teams:
-                try:
-                    scrape_pull_team_daily_stats(
-                        conn, season_year, league_id, team["team_id"], team["team_key"], date_str,
-                        sport_path, base_url=base_url,
-                    )
-                except Exception as exc:  # noqa: BLE001 - one bad team-day shouldn't kill the whole backfill
-                    logger.exception("Daily stats scrape failed for %s on %s", team["team_key"], date_str)
-                    errors.append(f"{date_str} {team['team_key']}: {exc}")
+        for team in teams:
+            if (team["team_key"], date_str) in already:
+                continue
+            try:
+                scrape_pull_team_daily_stats(
+                    conn, season_year, league_id, team["team_id"], team["team_key"], date_str,
+                    sport_path, base_url=base_url,
+                )
+            except Exception as exc:  # noqa: BLE001 - one bad team-day shouldn't kill the whole backfill
+                logger.exception("Daily stats scrape failed for %s on %s", team["team_key"], date_str)
+                errors.append(f"{date_str} {team['team_key']}: {exc}")
+            time.sleep(throttle_seconds)
         processed += 1
         if processed % progress_every == 0:
             logger.info("Daily stats backfill: %s/%s days done for season %s", processed, total_days, season_year)

@@ -129,6 +129,21 @@ def stored_daily_stat_delta_dates(conn: sqlite3.Connection, season_year: int) ->
     return {r["snapshot_date"] for r in rows}
 
 
+def stored_daily_stat_delta_team_dates(conn: sqlite3.Connection, season_year: int) -> set[tuple[str, str]]:
+    """Per-(team_key, snapshot_date) coverage, finer-grained than
+    stored_daily_stat_delta_dates -- confirmed real: a per-team scrape
+    fetch can fail for just one or two teams on an otherwise-successful
+    day (e.g. a transient timeout), and date-only resumability would
+    then skip that whole date on every future run since it already has
+    SOME rows, silently leaving those specific teams' data missing
+    forever."""
+    rows = conn.execute(
+        "SELECT DISTINCT team_key, snapshot_date FROM team_daily_stat_deltas WHERE season_year = ?",
+        (season_year,),
+    ).fetchall()
+    return {(r["team_key"], r["snapshot_date"]) for r in rows}
+
+
 def upsert_transaction(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     _upsert(conn, "transactions", row, ["transaction_key"])
 
