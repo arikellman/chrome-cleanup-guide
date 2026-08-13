@@ -17,7 +17,7 @@ from flask import Flask, g, jsonify, request, send_from_directory
 from app import config as cfg
 from app import roto
 from app.db import database
-from app.jobs.daily import run_daily_pull
+from app.scrape import jobs as scrape_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,47 @@ def _is_rate_stat(display_name: str | None, name: str | None) -> bool:
 
 _pull_lock = threading.Lock()
 _pull_running = False
+
+
+def run_scrape_pull(kind: str = "manual") -> dict[str, Any]:
+    """Runs one scrape pull of the current season (standings, draft
+    results, transactions) -- the scraping-era replacement for the
+    dead app.jobs.daily.run_daily_pull this dashboard used to call.
+
+    CONFIRMED REAL BUG this fixes: __main__.py's CLI `pull`/`backfill`
+    commands were repointed to app/scrape/jobs.py when Yahoo revoked API
+    access, but this web server's /api/pull route, its hourly
+    stale-data catch-up, and its daily cron job were never updated --
+    all three kept calling the dead API-based run_daily_pull, which
+    fails immediately (403 from Yahoo), so "Pull Now" silently did
+    nothing and the dashboard's last-pull date stayed frozen at
+    whenever the API was last reachable. Logs to fetch_log exactly like
+    the old job did, so /api/meta's last_successful_pull reflects real
+    scrape activity again.
+    """
+    config = cfg.load_config()
+    league_id = config.get("yahoo_web_league_id")
+    season_year = config.get("yahoo_web_current_season_year")
+    if not league_id or not season_year:
+        raise RuntimeError(
+            "yahoo_web_league_id / yahoo_web_current_season_year not set in data/config.json -- "
+            "run `python -m app scrape-auth` and `python -m app pull` from the CLI first."
+        )
+    conn = database.get_connection()
+    log_id = database.start_fetch_log(conn, kind)
+    try:
+        result = {
+            "standings": scrape_jobs.scrape_pull_standings(conn, season_year, league_id),
+            "draft_results": scrape_jobs.scrape_pull_draft_results(conn, season_year, league_id),
+            "transactions": scrape_jobs.scrape_pull_transactions(conn, season_year, league_id),
+        }
+        database.finish_fetch_log(conn, log_id, "ok")
+        return result
+    except Exception as exc:  # noqa: BLE001 - surfaced via fetch_log's detail column
+        database.finish_fetch_log(conn, log_id, "error", str(exc))
+        raise
+    finally:
+        conn.close()
 
 
 def _rows(cursor: sqlite3.Cursor) -> list[dict[str, Any]]:
@@ -558,7 +599,7 @@ def create_app() -> Flask:
         def _run():
             global _pull_running
             try:
-                run_daily_pull(kind="manual")
+                run_scrape_pull(kind="manual")
             finally:
                 with _pull_lock:
                     _pull_running = False
@@ -598,7 +639,7 @@ def _catch_up_if_stale() -> None:
         global _pull_running
         try:
             logger.info("Data is stale or missing; running catch-up pull")
-            run_daily_pull(kind="daily")
+            run_scrape_pull(kind="daily")
         finally:
             with _pull_lock:
                 _pull_running = False
@@ -614,7 +655,7 @@ def run_server(host: str = "127.0.0.1", port: int = 8765) -> None:
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(
-        lambda: run_daily_pull(kind="daily"),
+        lambda: run_scrape_pull(kind="daily"),
         "cron",
         hour=hour,
         minute=minute,
