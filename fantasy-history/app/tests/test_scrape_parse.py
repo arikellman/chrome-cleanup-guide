@@ -673,6 +673,78 @@ class TestIngestTeamDailyTotals(unittest.TestCase):
         self.assertEqual(count, 0)
 
 
+class TestScrapeBackfillDailyStatsCircuitBreaker(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+        for team_id in ("9", "8", "3"):
+            self.conn.execute(
+                "INSERT INTO teams (season_year, team_key, team_id, name) VALUES (?, ?, ?, ?)",
+                (2026, f"74647.t.{team_id}", team_id, f"Team {team_id}"),
+            )
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_stops_early_after_consecutive_timeout_length_fetches(self):
+        # Confirmed real: once Yahoo starts rate-limiting, every
+        # subsequent team-day fetch takes the full ~20s wait_selector
+        # timeout instead of the normal ~2s -- simulate that by making
+        # scrape_pull_team_daily_stats "take" 20s per call (via a fake
+        # clock) starting from the very first call, and confirm the
+        # backfill stops after suspected_block_streak consecutive slow
+        # calls rather than working through every remaining team/date.
+        clock = [0.0]
+
+        def fake_monotonic():
+            return clock[0]
+
+        def fake_pull(*args, **kwargs):
+            clock[0] += 20.0  # every call looks like a full timeout
+
+        with unittest.mock.patch("app.scrape.jobs.time.monotonic", side_effect=fake_monotonic), \
+             unittest.mock.patch("app.scrape.jobs.time.sleep"), \
+             unittest.mock.patch("app.scrape.jobs.scrape_pull_team_daily_stats", side_effect=fake_pull) as mock_pull:
+            result = jobs.scrape_backfill_daily_stats(
+                self.conn, 2026, "74647", "2026-08-01", "2026-08-10",
+                suspected_block_seconds=15.0, suspected_block_streak=3,
+            )
+
+        self.assertTrue(result["aborted_suspected_block"])
+        # 3 teams need to time out before the breaker trips -- it should
+        # not have gone on to fetch every team for every one of the 10 days.
+        self.assertEqual(mock_pull.call_count, 3)
+        self.assertTrue(any("Aborted early" in e for e in result["errors"]))
+
+    def test_does_not_trip_on_isolated_slow_fetch(self):
+        # A single slow/timed-out team-day surrounded by normal-speed
+        # ones is the legitimate "no data for this team-day" case, not a
+        # block -- must not trip the breaker.
+        clock = [0.0]
+        call_count = [0]
+
+        def fake_monotonic():
+            return clock[0]
+
+        def fake_pull(*args, **kwargs):
+            call_count[0] += 1
+            # Every 5th call is slow (isolated), the rest are fast.
+            clock[0] += 20.0 if call_count[0] % 5 == 0 else 2.0
+
+        with unittest.mock.patch("app.scrape.jobs.time.monotonic", side_effect=fake_monotonic), \
+             unittest.mock.patch("app.scrape.jobs.time.sleep"), \
+             unittest.mock.patch("app.scrape.jobs.scrape_pull_team_daily_stats", side_effect=fake_pull) as mock_pull:
+            result = jobs.scrape_backfill_daily_stats(
+                self.conn, 2026, "74647", "2026-08-01", "2026-08-03",
+                suspected_block_seconds=15.0, suspected_block_streak=3,
+            )
+
+        self.assertFalse(result["aborted_suspected_block"])
+        self.assertEqual(mock_pull.call_count, 9)  # 3 teams x 3 days, ran to completion
+
+
 class TestStoredDailyStatDeltaTeamDates(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")

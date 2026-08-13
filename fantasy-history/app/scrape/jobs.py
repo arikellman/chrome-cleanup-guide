@@ -523,7 +523,9 @@ def scrape_backfill_daily_stats(
     *,
     base_url: str | None = None,
     progress_every: int = 5,
-    throttle_seconds: float = 1.5,
+    throttle_seconds: float = 4.0,
+    suspected_block_seconds: float = 15.0,
+    suspected_block_streak: int = 3,
 ) -> dict[str, Any]:
     """Walks every day in [start_date, end_date] (inclusive, ISO
     "YYYY-MM-DD" strings) for every team already on file for this
@@ -542,9 +544,30 @@ def scrape_backfill_daily_stats(
     Throttled: confirmed real that back-to-back fetches with no pause
     between them (a season's worth of team-day pages is potentially
     hundreds of requests) triggers failures partway through a run that
-    weren't happening for the first few days -- sleeps `throttle_seconds`
+    weren't happening for the first few days -- sleeps throttle_seconds
     between every team-day fetch, same "be polite to Yahoo" spirit as the
-    dormant API client's own MIN_REQUEST_INTERVAL throttle.
+    dormant API client's own MIN_REQUEST_INTERVAL throttle. Bumped from
+    the original 1.5s to 4.0s after a real live run still got rate
+    limited (by Yahoo, at the IP level -- confirmed by the user's own
+    separate browser also getting denied) after only about 8 minutes of
+    continuous fetching at the old pace.
+
+    Circuit breaker: a genuine "no data for this team-day" timeout is
+    rare and isolated -- a real live run showed that once Yahoo starts
+    blocking, every subsequent fetch times out the same way (confirmed:
+    goto dropped from its normal ~1.5-2.5s down to ~0.4-0.5s, consistent
+    with Yahoo serving a small denial page instead of the real one,
+    followed immediately by the wait_selector timing out because the
+    denial page obviously has no #statTable0). Without this, the loop
+    kept hammering Yahoo every ~20s for many more team-days after the
+    block started, which can only make the block worse. If
+    suspected_block_streak consecutive team-day fetches each take
+    longer than suspected_block_seconds (i.e. hit the full
+    wait_selector timeout rather than finding real content quickly),
+    stop the whole backfill immediately rather than continuing through
+    the remaining days -- per-(team, date) resumability means whatever
+    was already fetched stays fetched, and re-running later picks up
+    exactly where this left off.
     """
     teams = _rows(conn.execute("SELECT team_key, team_id FROM teams WHERE season_year = ?", (season_year,)))
     if not teams:
@@ -558,12 +581,15 @@ def scrape_backfill_daily_stats(
     total_days = (end - start).days + 1
     processed = 0
     errors: list[str] = []
+    consecutive_slow = 0
+    blocked = False
     current = start
-    while current <= end:
+    while current <= end and not blocked:
         date_str = current.isoformat()
         for team in teams:
             if (team["team_key"], date_str) in already:
                 continue
+            t_team = time.monotonic()
             try:
                 scrape_pull_team_daily_stats(
                     conn, season_year, league_id, team["team_id"], team["team_key"], date_str,
@@ -572,10 +598,32 @@ def scrape_backfill_daily_stats(
             except Exception as exc:  # noqa: BLE001 - one bad team-day shouldn't kill the whole backfill
                 logger.exception("Daily stats scrape failed for %s on %s", team["team_key"], date_str)
                 errors.append(f"{date_str} {team['team_key']}: {exc}")
+            elapsed = time.monotonic() - t_team
+            if elapsed >= suspected_block_seconds:
+                consecutive_slow += 1
+                if consecutive_slow >= suspected_block_streak:
+                    logger.error(
+                        "Daily stats backfill: %s consecutive team-day fetches each took over %.0fs -- "
+                        "this matches a Yahoo rate-limit/block response (a fast-loading denial page, not "
+                        "the real one), not isolated missing data. Stopping this backfill run now instead "
+                        "of continuing to hit Yahoo. Wait a while, then re-run scrape-daily-stats -- it "
+                        "will resume from %s %s onward.",
+                        consecutive_slow, suspected_block_seconds, date_str, team["team_key"],
+                    )
+                    errors.append(
+                        f"Aborted early at {date_str} {team['team_key']}: "
+                        f"{consecutive_slow} consecutive timeouts, likely rate-limited by Yahoo"
+                    )
+                    blocked = True
+                    break
+            else:
+                consecutive_slow = 0
             time.sleep(throttle_seconds)
+        if blocked:
+            break
         processed += 1
         if processed % progress_every == 0:
             logger.info("Daily stats backfill: %s/%s days done for season %s", processed, total_days, season_year)
         current += dt.timedelta(days=1)
 
-    return {"days_processed": processed, "errors": errors}
+    return {"days_processed": processed, "errors": errors, "aborted_suspected_block": blocked}
