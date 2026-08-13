@@ -1,7 +1,8 @@
-"""CLI entry point: python -m app <auth|pull|backfill|scrape-auth|scrape-season|serve|status>"""
+"""CLI entry point: python -m app <auth|pull|backfill|scrape-auth|scrape-season|scrape-daily-stats|serve|status>"""
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import logging
 import sys
 import webbrowser
@@ -336,6 +337,59 @@ def cmd_scrape_season(args: argparse.Namespace) -> None:
         conn.close()
 
 
+def cmd_scrape_daily_stats(args: argparse.Namespace) -> None:
+    """Backfills day-by-day stat history for the CURRENT season via the
+    per-team `?date=YYYY-MM-DD` "date hack" (each team page's "Starting
+    Lineup Total(s)" row -- see app/scrape/parse.py's
+    parse_team_daily_totals), writing into the same team_daily_stat_deltas
+    table the dormant API era used, so a chart spanning the cutover date
+    is continuous rather than showing a gap.
+
+    Resumable and idempotent by default: with no --since, starts the day
+    after whatever's already in team_daily_stat_deltas for this season
+    (the API got this league through roughly 2026-07-21 before Yahoo
+    revoked access -- this just fills the gap from there forward), or the
+    season's start_date if nothing's there yet. --since/--until override
+    either end explicitly.
+    """
+    from app.scrape import jobs as scrape_jobs
+
+    config = cfg.load_config()
+    league_id, season_year = _current_scrape_league_and_year(config)
+    conn = database.get_connection()
+    try:
+        if args.since:
+            start_date = args.since
+        else:
+            covered = database.stored_daily_stat_delta_dates(conn, season_year)
+            if covered:
+                start_date = (dt.date.fromisoformat(max(covered)) + dt.timedelta(days=1)).isoformat()
+            else:
+                season_row = conn.execute(
+                    "SELECT start_date FROM seasons WHERE season_year = ?", (season_year,)
+                ).fetchone()
+                start_date = season_row["start_date"] if season_row and season_row["start_date"] else None
+                if not start_date:
+                    print(
+                        "No prior daily stats on file and no season start_date known -- "
+                        "pass --since YYYY-MM-DD to say where to start."
+                    )
+                    sys.exit(1)
+        end_date = args.until or dt.date.today().isoformat()
+
+        if start_date > end_date:
+            print(f"Nothing to do: start_date {start_date} is after end_date {end_date}.")
+            return
+
+        print(f"Backfilling daily stats for season {season_year}, {start_date} through {end_date}...")
+        result = scrape_jobs.scrape_backfill_daily_stats(conn, season_year, league_id, start_date, end_date)
+        print(result)
+        if result["errors"]:
+            sys.exit(1)
+    finally:
+        conn.close()
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     from app.web.server import run_server
 
@@ -602,6 +656,16 @@ def main() -> None:
         "since Yahoo has been observed to time out under sustained back-to-back scraping)",
     )
     p_scrape_season.set_defaults(func=cmd_scrape_season)
+
+    p_scrape_daily = sub.add_parser(
+        "scrape-daily-stats",
+        help="Backfill day-by-day stat history for the current season via the per-team ?date= page",
+    )
+    p_scrape_daily.add_argument(
+        "--since", help="ISO date (YYYY-MM-DD) to start from. Default: resumes automatically."
+    )
+    p_scrape_daily.add_argument("--until", help="ISO date (YYYY-MM-DD) to stop at. Default: today.")
+    p_scrape_daily.set_defaults(func=cmd_scrape_daily_stats)
 
     p_serve = sub.add_parser("serve", help="Run the daily scheduler + dashboard web server")
     p_serve.add_argument("--host", default="127.0.0.1")

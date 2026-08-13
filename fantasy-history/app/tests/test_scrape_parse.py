@@ -164,6 +164,41 @@ class TestParseTransactions(unittest.TestCase):
         self.assertEqual(tx["players"][0]["position"], "OF")
 
 
+class TestParseTeamDailyTotals(unittest.TestCase):
+    def setUp(self):
+        self.parsed = parse.parse_team_daily_totals(load("team_daily.html"))
+
+    def test_batting_totals_from_starting_lineup_row(self):
+        batting = self.parsed["batting"]
+        self.assertEqual(batting["R"], "1")
+        self.assertEqual(batting["HR"], "0")
+        self.assertEqual(batting["RBI"], "1")
+        self.assertEqual(batting["OBP"], ".333")
+        self.assertEqual(batting["H/AB*"], "1/3")
+
+    def test_bench_player_excluded_from_totals(self):
+        # Confirmed real: the totals row already excludes bench/IL
+        # players -- the fixture's bench player has very different stats
+        # (HR 2, K 0) from the totals row (HR 0, K 1), so this fails loudly
+        # if the parser ever starts summing every roster row itself
+        # instead of reading Yahoo's own totals row.
+        batting = self.parsed["batting"]
+        self.assertEqual(batting["K"], "1")
+        self.assertEqual(batting["HR"], "0")
+
+    def test_pitching_totals(self):
+        pitching = self.parsed["pitching"]
+        self.assertEqual(pitching["W"], "1")
+        self.assertEqual(pitching["K"], "7")
+        self.assertEqual(pitching["ERA"], "2.00")
+        self.assertEqual(pitching["WHIP"], "1.10")
+        self.assertEqual(pitching["IP*"], "6.0")
+
+    def test_roster_metadata_columns_excluded(self):
+        for col in ("Pos", "Batters", "Opp", "Pre-Season", "% Start", "% Ros"):
+            self.assertNotIn(col, self.parsed["batting"])
+
+
 class TestSeasonNav(unittest.TestCase):
     def setUp(self):
         self.html = load("league_home.html")
@@ -561,6 +596,66 @@ class TestIngestTransactions(unittest.TestCase):
         jobs.ingest_transactions_html(self.conn, load("transactions.html"), 2026, "74647")
         count = self.conn.execute("SELECT COUNT(*) AS c FROM transactions WHERE season_year = ?", (2026,)).fetchone()["c"]
         self.assertEqual(count, 3)
+
+
+class TestIngestTeamDailyTotals(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_ingest_writes_batting_and_pitching_deltas(self):
+        result = jobs.ingest_team_daily_totals_html(
+            self.conn, load("team_daily.html"), 2026, "74647.t.9", "2026-08-08"
+        )
+        self.assertEqual(result["stat_rows"], 14)  # 7 batting + 7 pitching
+
+        rows = self.conn.execute(
+            "SELECT tdd.value, sc.display_name, sc.position_type FROM team_daily_stat_deltas tdd "
+            "JOIN stat_categories sc ON sc.season_year = tdd.season_year AND sc.stat_id = tdd.stat_id "
+            "WHERE tdd.season_year = 2026 AND tdd.team_key = '74647.t.9' AND tdd.snapshot_date = '2026-08-08'"
+        ).fetchall()
+        by_name = {(r["display_name"], r["position_type"]): r["value"] for r in rows}
+        self.assertEqual(by_name[("R", "B")], "1")
+        self.assertEqual(by_name[("ERA", "P")], "2.00")
+
+    def test_reuses_existing_stat_id_for_continuity_with_api_era(self):
+        # Confirmed real: the team page's column headers already match the
+        # season's existing (API-era) stat_categories display names
+        # exactly, so a chart spanning the API-to-scraping cutover date
+        # should see one continuous stat_id, not a duplicate category.
+        database.upsert_stat_categories(
+            self.conn,
+            [
+                {
+                    "season_year": 2026,
+                    "stat_id": 7,
+                    "name": "R",
+                    "display_name": "R",
+                    "sort_order": 1,
+                    "display_order": 0,
+                    "is_display_only": 0,
+                    "position_type": "B",
+                }
+            ],
+        )
+        jobs.ingest_team_daily_totals_html(self.conn, load("team_daily.html"), 2026, "74647.t.9", "2026-08-08")
+        row = self.conn.execute(
+            "SELECT stat_id FROM team_daily_stat_deltas WHERE season_year = 2026 AND team_key = '74647.t.9' "
+            "AND snapshot_date = '2026-08-08' AND stat_id = 7"
+        ).fetchone()
+        self.assertIsNotNone(row)  # reused stat_id 7, didn't mint a new 9000+ one for "R"/"B"
+
+    def test_ingest_is_idempotent(self):
+        jobs.ingest_team_daily_totals_html(self.conn, load("team_daily.html"), 2026, "74647.t.9", "2026-08-08")
+        jobs.ingest_team_daily_totals_html(self.conn, load("team_daily.html"), 2026, "74647.t.9", "2026-08-08")
+        count = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM team_daily_stat_deltas WHERE season_year = 2026 AND team_key = '74647.t.9'"
+        ).fetchone()["c"]
+        self.assertEqual(count, 14)
 
 
 if __name__ == "__main__":

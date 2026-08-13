@@ -363,31 +363,71 @@ def parse_transactions(html: str) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------
-# Team roster page (team page's statTable0/statTable1)
+# Team page, single-day totals (team page's statTable0/statTable1 with
+# ?date=YYYY-MM-DD -- the "date hack" that makes retroactive day-by-day
+# stat history possible via scraping, the same way the dormant API's
+# type=date team stats did)
 # ---------------------------------------------------------------------
 
-def parse_team_roster(html: str) -> dict[str, list[dict[str, Any]]]:
-    """TODO -- NOT IMPLEMENTED. Lower priority per the scraping-pivot
-    task; stubbed here with the confirmed structure so a future session
-    doesn't need to re-derive it from a saved page.
+_STARTING_LINEUP_TOTAL_RE = re.compile(r"^Starting Lineup Total")
+# Confirmed against a real saved team page: columns before this index are
+# roster/player metadata (Pos, Batters/Pitchers, Opp, Pre-Season, % Start,
+# % Ros), not stat categories -- ['Pos', 'Batters', 'Opp', 'Pre-Season',
+# '% Start', '% Ros', 'H/AB*', 'R', 'HR', ...]. The header text for these
+# looked stable, but position (not text) is used anyway, consistent with
+# every other parser in this module after the standings-page header-drift
+# bug -- see parse_standings_tables.
+_STAT_COLUMNS_START = 6
 
-    Confirmed against the real saved team page (unlike the standings
-    page, these ids are STABLE across loads):
-      - `#statTable0` = batters. Row 0 (group headers): ['', '', '',
-        'Rank', 'Fantasy', 'Batting', '']. Row 1 (column headers): ['Pos',
-        'Batters', 'Opp', 'Pre-Season', '% Start', '% Ros', 'H/AB*', 'R',
-        'HR', 'RBI', 'SB', 'K', 'OBP', ''].
-      - `#statTable1` = pitchers. Row 0: ['', '', '', 'Rank', 'Fantasy',
-        'Pitching', '']. Row 1: ['Pos', 'Pitchers', 'Opp', 'Pre-Season',
-        '% Start', '% Ros', 'IP*', 'W', 'SV', 'K', 'HLD', 'ERA', 'WHIP',
-        ''].
-      - Player name/id is expected in the "Batters"/"Pitchers" column via
-        the same `PLAYER_LINK_RE`-shaped <a> as draft results/
-        transactions, but the exact cell markup for that column was NOT
-        inspected in detail (only the header rows were confirmed) -- do
-        that before writing the real parser body.
+
+def parse_team_daily_totals(html: str) -> dict[str, dict[str, str]]:
+    """Parses a team page loaded with `?date=YYYY-MM-DD`
+    (`.../{league_id}/{team_id}/team?date=2026-08-08`, confirmed via that
+    real page's own canonical link tag) into that SINGLE day's team-level
+    stat totals: {"batting": {stat_display_name: value, ...}, "pitching":
+    {...}}.
+
+    Confirmed against a real saved team page: `#statTable0` (batters) and
+    `#statTable1` (pitchers) are per-PLAYER roster tables, but each one's
+    LAST row is a "Starting Lineup Total(s)" row that already sums the
+    team's stat production for that day across exactly the players who
+    were in an active (non-bench, non-IL) slot -- precisely what a daily
+    team-level delta needs, with no per-player summing required. Found by
+    text match ("Starting Lineup Total...") rather than assumed to always
+    be the literal last `<tr>`, in case Yahoo ever appends something
+    after it.
+
+    Column headers (row 1 of each table) are read the same
+    position-based way as parse_standings_tables (see that function's
+    docstring for why: Yahoo's exact header text is not assumed stable),
+    skipping the first `_STAT_COLUMNS_START` columns (roster metadata,
+    not stats) and the trailing empty notes column.
     """
-    raise NotImplementedError(
-        "parse_team_roster is stubbed -- see this function's docstring for the "
-        "confirmed #statTable0/#statTable1 header structure to build it from."
-    )
+    soup = BeautifulSoup(html, "lxml")
+    result: dict[str, dict[str, str]] = {}
+    for table_id, kind in (("statTable0", "batting"), ("statTable1", "pitching")):
+        table = soup.find(id=table_id)
+        if table is None:
+            continue
+        rows = table.find_all("tr")
+        if len(rows) < 2:
+            continue
+        headers = [c.get_text(" ", strip=True) for c in rows[1].find_all(["th", "td"])]
+
+        totals_row = None
+        for r in rows[2:]:
+            cells = r.find_all(["th", "td"])
+            if len(cells) >= 2 and _STARTING_LINEUP_TOTAL_RE.match(cells[1].get_text(" ", strip=True)):
+                totals_row = cells
+                break
+        if totals_row is None or len(totals_row) != len(headers):
+            continue
+
+        stats: dict[str, str] = {}
+        for i in range(_STAT_COLUMNS_START, len(headers) - 1):
+            header = headers[i]
+            if not header:
+                continue
+            stats[header] = totals_row[i].get_text(" ", strip=True)
+        result[kind] = stats
+    return result

@@ -47,12 +47,22 @@ access -- see their module docstrings.
   scheduler that pulls once a day (default 07:30) and automatically catches
   up if your computer was asleep or off when the scheduled time passed --
   unchanged from before.
+- `python -m app scrape-daily-stats` backfills day-by-day stat history
+  retroactively using the same "date hack" trick found on individual team
+  pages (`.../{team_id}/team?date=YYYY-MM-DD`): each team's page for a given
+  day shows a "Starting Lineup Total(s)" row that's already that team's
+  summed stat production for that single day (bench/IL players correctly
+  excluded), which is exactly what a daily delta needs -- the same thing the
+  old API's `type=date` team stats did. Resumable: it picks up automatically
+  from wherever `team_daily_stat_deltas` already leaves off (so re-running
+  only fetches what's actually missing), and writes into that same table the
+  API era used, so a chart spanning the cutover date is one continuous line.
 
 **IMPORTANT caveat for whoever runs this for real:** the actual Playwright
 browser automation against a live, logged-in Yahoo session has NOT been
 exercised end-to-end anywhere this code was written (no network access to
-Yahoo in that environment). The four HTML parsers (`app/scrape/parse.py`)
-were validated against real saved Yahoo pages and are unit-tested against
+Yahoo in that environment). The HTML parsers (`app/scrape/parse.py`) were
+validated against real saved Yahoo pages and are unit-tested against
 fixtures mirroring that confirmed structure -- but `scrape-auth`'s browser
 launch, the headless `fetch_page`/`paginate_by_click` calls, and the
 `gotoseason` season walk-back all need to be run for real and watched
@@ -117,6 +127,8 @@ says exactly what it assumes and why).
 | `python -m app scrape-auth` | One-time interactive Yahoo login for scraping |
 | `python -m app scrape-season 2022` | Scrape one season (walks `gotoseason` if needed) |
 | `python -m app scrape-season --all-seasons` | Recover every season's history, back to 2001 |
+| `python -m app scrape-daily-stats` | Backfill day-by-day stat history for the current season (resumes automatically) |
+| `python -m app scrape-daily-stats --since 2026-01-01` | Same, but starting from a specific date |
 | `python -m app pull` | Run one manual pull of the current season right now |
 | `python -m app backfill --all` | Recover every known season's history |
 | `python -m app backfill --season 2022` | Recover a single season |

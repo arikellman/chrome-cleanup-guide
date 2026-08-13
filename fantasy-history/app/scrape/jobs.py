@@ -32,6 +32,10 @@ SPORT_PATH_DEFAULT = "b1"
 _NON_STAT_COLUMNS = {"Rank", "Team Name", "Total Points", "Pts Change", "league_id", "team_id"}
 
 
+def _rows(cursor) -> list[dict[str, Any]]:
+    return [dict(r) for r in cursor.fetchall()]
+
+
 def _to_int(value: Any) -> int | None:
     try:
         if value in (None, ""):
@@ -441,3 +445,121 @@ def scrape_pull_transactions(
         totals["players"] += result["players"]
     conn.commit()
     return totals
+
+
+# ---------------------------------------------------------------------
+# Team page, single-day totals ("date hack" retroactive daily stats)
+# ---------------------------------------------------------------------
+
+def team_daily_url(
+    team_id: str, game_date: str, league_id: str, sport_path: str = SPORT_PATH_DEFAULT, *, base_url: str | None = None
+) -> str:
+    return f"{league_home_url(league_id, sport_path, base_url=base_url)}/{team_id}/team?date={game_date}"
+
+
+def ingest_team_daily_totals_html(
+    conn, html: str, season_year: int, team_key: str, game_date: str
+) -> dict[str, Any]:
+    """Parses+writes one team-page-on-one-date scrape into
+    team_daily_stat_deltas -- the SAME (dormant, API-era) table the old
+    Yahoo API's type=date team stats populated, so a chart spanning the
+    API-to-scraping cutover date sees one continuous line rather than a
+    gap or a duplicate category. identity.resolve_stat_id is what makes
+    that continuity real: it reuses the season's already-known Yahoo
+    stat_ids for these exact (display_name, position_type) pairs rather
+    than minting new ones, since the team page's column headers were
+    confirmed to already match the existing category names exactly (R,
+    HR, RBI, SB, K, OBP, W, SV, HLD, ERA, WHIP, H/AB*, IP*).
+    """
+    parsed = parse.parse_team_daily_totals(html)
+    rows = []
+    for kind, position_type in (("batting", "B"), ("pitching", "P")):
+        for col_key, value in parsed.get(kind, {}).items():
+            display_name, is_display_only = identity.normalize_stat_column(col_key)
+            stat_id = identity.resolve_stat_id(
+                conn, season_year, display_name, position_type, is_display_only=1 if is_display_only else 0
+            )
+            rows.append(
+                {
+                    "snapshot_date": game_date,
+                    "season_year": season_year,
+                    "team_key": team_key,
+                    "stat_id": stat_id,
+                    "value": value,
+                }
+            )
+    database.insert_team_daily_stat_deltas(conn, rows)
+    return {"stat_rows": len(rows)}
+
+
+def scrape_pull_team_daily_stats(
+    conn,
+    season_year: int,
+    league_id: str,
+    team_id: str,
+    team_key: str,
+    game_date: str,
+    sport_path: str = SPORT_PATH_DEFAULT,
+    *,
+    base_url: str | None = None,
+) -> dict[str, Any]:
+    html = browser.fetch_page(
+        team_daily_url(team_id, game_date, league_id, sport_path, base_url=base_url),
+        wait_selector="#statTable0",
+    )
+    result = ingest_team_daily_totals_html(conn, html, season_year, team_key, game_date)
+    conn.commit()
+    return result
+
+
+def scrape_backfill_daily_stats(
+    conn,
+    season_year: int,
+    league_id: str,
+    start_date: str,
+    end_date: str,
+    sport_path: str = SPORT_PATH_DEFAULT,
+    *,
+    base_url: str | None = None,
+    progress_every: int = 5,
+) -> dict[str, Any]:
+    """Walks every day in [start_date, end_date] (inclusive, ISO
+    "YYYY-MM-DD" strings) for every team already on file for this
+    season, scraping that team's single-day totals via the ?date= "date
+    hack" -- resumable and idempotent: days already fully covered (per
+    database.stored_daily_stat_delta_dates) are skipped entirely, so
+    re-running only ever fetches what's actually missing, same as the
+    dormant API-era app.jobs.backfill.backfill_daily_stat_deltas this
+    replaces.
+    """
+    teams = _rows(conn.execute("SELECT team_key, team_id FROM teams WHERE season_year = ?", (season_year,)))
+    if not teams:
+        raise RuntimeError(
+            f"No teams on file for season {season_year} -- run a standings scrape for this season first."
+        )
+    already = database.stored_daily_stat_delta_dates(conn, season_year)
+
+    start = dt.date.fromisoformat(start_date)
+    end = dt.date.fromisoformat(end_date)
+    total_days = (end - start).days + 1
+    processed = 0
+    errors: list[str] = []
+    current = start
+    while current <= end:
+        date_str = current.isoformat()
+        if date_str not in already:
+            for team in teams:
+                try:
+                    scrape_pull_team_daily_stats(
+                        conn, season_year, league_id, team["team_id"], team["team_key"], date_str,
+                        sport_path, base_url=base_url,
+                    )
+                except Exception as exc:  # noqa: BLE001 - one bad team-day shouldn't kill the whole backfill
+                    logger.exception("Daily stats scrape failed for %s on %s", team["team_key"], date_str)
+                    errors.append(f"{date_str} {team['team_key']}: {exc}")
+        processed += 1
+        if processed % progress_every == 0:
+            logger.info("Daily stats backfill: %s/%s days done for season %s", processed, total_days, season_year)
+        current += dt.timedelta(days=1)
+
+    return {"days_processed": processed, "errors": errors}
