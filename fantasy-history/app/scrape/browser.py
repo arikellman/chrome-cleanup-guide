@@ -104,20 +104,26 @@ def fetch_page(
     on `wait_selector` -- which callers should always pass -- as the real
     "is the content I actually need here yet" signal.
     """
+    import time
+
     from playwright.sync_api import sync_playwright
 
     state_path = _require_state_path()
     with sync_playwright() as p:
+        t_launch = time.monotonic()
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(storage_state=str(state_path))
         page = context.new_page()
+        logger.info("fetch_page: browser launched for %s in %.1fs", url, time.monotonic() - t_launch)
         try:
+            t_goto = time.monotonic()
             if method == "post":
                 resp = page.request.post(url, form=form_data or {})
                 location = resp.headers.get("location")
-                page.goto(location or url, wait_until="domcontentloaded")
+                page.goto(location or url, wait_until="domcontentloaded", timeout=30000)
             else:
-                page.goto(url, wait_until="domcontentloaded")
+                page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            logger.info("fetch_page: goto %s done in %.1fs", url, time.monotonic() - t_goto)
             if _is_login_redirect(page.url):
                 raise NeedsReloginError(
                     f"Redirected to Yahoo login while fetching {url}. "
@@ -136,17 +142,31 @@ def fetch_page(
                 # rather than failing the whole fetch, and let the caller's
                 # parser (which returns an empty list on no rows) be the
                 # one to decide that's fine.
+                #
+                # NOTE: this 20s timeout is enforced by Playwright itself,
+                # not by us -- if a run ever hangs noticeably longer than
+                # that with no log line at all past "goto ... done", the
+                # hang is NOT in this call (see the surrounding info logs
+                # added to pin that down after a real live run got stuck
+                # here for well over 20s with no exception raised).
+                t_wait = time.monotonic()
                 try:
                     page.wait_for_selector(wait_selector, timeout=20000)
+                    logger.info(
+                        "fetch_page: wait_selector %r found after %.1fs on %s",
+                        wait_selector, time.monotonic() - t_wait, url,
+                    )
                 except Exception:  # noqa: BLE001 - see comment above
                     logger.warning(
-                        "fetch_page: wait_selector %r never appeared/became visible on %s "
+                        "fetch_page: wait_selector %r never appeared/became visible after %.1fs on %s "
                         "(may just mean no matching content) -- returning current page content",
-                        wait_selector, url,
+                        wait_selector, time.monotonic() - t_wait, url,
                     )
             html = page.content()
         finally:
+            t_close = time.monotonic()
             browser.close()
+            logger.info("fetch_page: browser.close() for %s took %.1fs", url, time.monotonic() - t_close)
     return html
 
 
