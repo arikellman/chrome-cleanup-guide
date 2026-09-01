@@ -1,0 +1,91 @@
+<!-- Hand-crafted minimal fixture mirroring the confirmed real structure of
+     baseball.fantasysports.yahoo.com/b1/{league_id}/transactions -- the
+     `Tst-transaction-table` class is stable (unlike the standings page's
+     random table ids). Row 1 reproduces the real page's browser-
+     extension-injected markup splitting a player's name across three
+     text fragments (confirmed real quirk, see app/scrape/parse.py's
+     module docstring) to prove get_text(" ", strip=True) recombines it
+     correctly. Row 2 has a $-cost waiver add. Row 3 is an add with no
+     matching drop (an open roster spot, confirmed possible on the real
+     page). -->
+<table class="Table Table-mid No-bdr Tst-transaction-table">
+  <tr>
+    <td class="Grid-u-1-12 Ta-c">
+      <span class="F-icon" title="Added Player"></span>
+      <span class="F-icon" title="Dropped Player"></span>
+    </td>
+    <td class="Fill-x No-pstart" colspan="2">
+      <div class="Pbot-xs">
+        <a href="https://sports.yahoo.com/mlb/players/63494" target="sports">
+          <span class="gb_scannedText gb_skip">
+            <div class="fp-player-match gb_skip"><div class="greaseBallCenter gb_skip">Jung</div></div>
+            Hoo
+            <div class="fp-player-match gb_skip"><div class="greaseBallCenter gb_skip">Lee</div></div>
+          </span>
+        </a>
+        <span class="F-position Fz-xxs">SF - OF</span>
+        <h6 class="F-shade Fz-xxs">Waiver</h6>
+      </div>
+      <div class="Pbot-xs">
+        <a href="https://sports.yahoo.com/mlb/players/62971" target="sports">Dylan Crews</a>
+        <span class="F-position Fz-xxs">WSH - OF</span>
+        <h6 class="F-shade Fz-xxs">To Waivers</h6>
+      </div>
+    </td>
+    <td class="Ta-end">
+      <div class="Grid-h-top Nowrap Fz-xxs">
+        <span class="Grid-u">
+          <a class="Tst-team-name" href="https://baseball.fantasysports.yahoo.com/b1/74647/11">The Ghost of Elvis Past</a>
+          <span class="Block F-timestamp Fz-xxs Nowrap">Aug 7, 11:41 am</span>
+        </span>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td class="Grid-u-1-12 Ta-c">
+      <span class="F-icon" title="Added Player"></span>
+      <span class="F-icon" title="Dropped Player"></span>
+    </td>
+    <td class="Fill-x No-pstart" colspan="2">
+      <div class="Pbot-xs">
+        <a href="https://sports.yahoo.com/mlb/players/10843" target="sports">Daulton Varsho</a>
+        <span class="F-position Fz-xxs">HOU - OF</span>
+        <h6 class="F-shade Fz-xxs">$1  Waiver</h6>
+      </div>
+      <div class="Pbot-xs">
+        <a href="https://sports.yahoo.com/mlb/players/11914" target="sports">Spencer Torkelson</a>
+        <span class="F-position Fz-xxs">DET - 1B</span>
+        <h6 class="F-shade Fz-xxs">To Waivers</h6>
+      </div>
+    </td>
+    <td class="Ta-end">
+      <div class="Grid-h-top Nowrap Fz-xxs">
+        <span class="Grid-u">
+          <a class="Tst-team-name" href="https://baseball.fantasysports.yahoo.com/b1/74647/7">Meshuganas</a>
+          <span class="Block F-timestamp Fz-xxs Nowrap">Aug 7, 11:41 am</span>
+        </span>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td class="Grid-u-1-12 Ta-c">
+      <span class="F-icon" title="Added Player"></span>
+    </td>
+    <td class="Fill-x No-pstart" colspan="2">
+      <div class="Pbot-xs">
+        <a href="https://sports.yahoo.com/mlb/players/60137" target="sports">Tanner Bibee</a>
+        <span class="F-position Fz-xxs">CLE - SP</span>
+        <h6 class="F-shade Fz-xxs">$2  Waiver</h6>
+      </div>
+    </td>
+    <td class="Ta-end">
+      <div class="Grid-h-top Nowrap Fz-xxs">
+        <span class="Grid-u">
+          <a class="Tst-team-name" href="https://baseball.fantasysports.yahoo.com/b1/74647/9">Prime Time</a>
+          <span class="Block F-timestamp Fz-xxs Nowrap">Aug 5, 11:35 am</span>
+        </span>
+      </div>
+    </td>
+  </tr>
+</table>
+<a href="https://baseball.fantasysports.yahoo.com/b1/74647/transactions?transactionsfilter=all&count=25">Next 25</a>

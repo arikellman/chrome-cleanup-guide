@@ -1,0 +1,59 @@
+{
+  "matchups": {
+    "0": {
+      "matchup": {
+        "week": "5",
+        "week_start": "2024-04-29",
+        "week_end": "2024-05-05",
+        "status": "postevent",
+        "is_playoffs": "0",
+        "is_consolation": "0",
+        "is_tied": "0",
+        "winner_team_key": "458.l.12345.t.1",
+        "stat_winners": {
+          "0": {"stat_winner": {"stat_id": "7", "winner_team_key": "458.l.12345.t.1"}},
+          "1": {"stat_winner": {"stat_id": "12", "winner_team_key": "458.l.12345.t.2"}},
+          "count": 2
+        },
+        "teams": {
+          "0": {
+            "team": [
+              [
+                {"team_key": "458.l.12345.t.1"},
+                {"name": "Bash Brothers"}
+              ],
+              {
+                "team_stats": {
+                  "stats": {
+                    "0": {"stat": {"stat_id": "7", "value": "20"}},
+                    "1": {"stat": {"stat_id": "12", "value": "3"}},
+                    "count": 2
+                  }
+                }
+              }
+            ]
+          },
+          "1": {
+            "team": [
+              [
+                {"team_key": "458.l.12345.t.2"},
+                {"name": "Diamond Dogs"}
+              ],
+              {
+                "team_stats": {
+                  "stats": {
+                    "0": {"stat": {"stat_id": "7", "value": "15"}},
+                    "1": {"stat": {"stat_id": "12", "value": "5"}},
+                    "count": 2
+                  }
+                }
+              }
+            ]
+          },
+          "count": 2
+        }
+      }
+    },
+    "count": 1
+  }
+}

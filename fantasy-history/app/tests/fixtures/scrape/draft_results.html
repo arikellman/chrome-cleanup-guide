@@ -1,0 +1,28 @@
+<!-- Hand-crafted minimal fixture mirroring the confirmed real structure of
+     baseball.fantasysports.yahoo.com/b1/{league_id}/draftresults -- one
+     <table> per round, first row a single-cell "Round N" marker, each
+     subsequent row [pick, player-cell-with-link, team-name-cell]. The
+     second pick is a two-way player ("(Batter)" suffix) with a
+     truncated visible team name and full name recoverable via `title`,
+     matching the real page's behavior. -->
+<table>
+  <tr><td colspan="3">Round 1</td></tr>
+  <tr>
+    <td>1.</td>
+    <td><a href="https://sports.yahoo.com/mlb/players/9877">Aaron Judge (NYY - OF)</a></td>
+    <td>Backcrackers</td>
+  </tr>
+  <tr>
+    <td>2.</td>
+    <td><a href="https://sports.yahoo.com/mlb/players/10835">Shohei Ohtani (Batter) (LAD - Util)</a></td>
+    <td title="Team Grimace (Gri-MAH-Chay)">Team Grimace...</td>
+  </tr>
+</table>
+<table>
+  <tr><td colspan="3">Round 2</td></tr>
+  <tr>
+    <td>1.</td>
+    <td><a href="https://sports.yahoo.com/mlb/players/12345">Bobby Witt Jr. (KC - SS)</a></td>
+    <td>Backcrackers</td>
+  </tr>
+</table>
