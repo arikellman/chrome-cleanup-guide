@@ -431,3 +431,67 @@ def parse_team_daily_totals(html: str) -> dict[str, dict[str, str]]:
             stats[header] = totals_row[i].get_text(" ", strip=True)
         result[kind] = stats
     return result
+
+
+# ---------------------------------------------------------------------
+# League-wide "Player List" page, filtered to All Taken Players
+# (.../players?status=T&pos={B|P}&stat1=S_S_{year}) -- gives every
+# rostered player's OWNING team directly, in one paginated list, instead
+# of needing to visit each team's own page separately. Built for
+# roster-snapshot / keeper-eligibility tracking.
+# ---------------------------------------------------------------------
+
+def parse_taken_players_page(html: str) -> list[dict[str, Any]]:
+    """VALIDATED against a real saved page (status=T, pos=P): correctly
+    parsed 25/25 rows, e.g. player_yahoo_id="60254", player_name="Jacob
+    Misiorowski", team_id="9", team_name="Prime Time" -- matching what was
+    visible on the live page. Same page structure is assumed (not yet
+    independently confirmed) for pos=B; only the trailing stat columns
+    differ between the two, which this function doesn't read anyway.
+
+    The table is found by locating a "Roster Status" header cell rather
+    than by position/id (no stable id, consistent with every other
+    Yahoo table in this module). Each player row: cells[2] holds the
+    player-name link (`<a class="... name ...">`, confirmed distinct from
+    the sibling "Player Note" link -- extracting from this link
+    specifically, not the whole cell, avoids picking up that junk).
+    cells[4] ("Roster Status") holds a plain team link,
+    `<a href="/b1/{league_id}/{team_id}">{team_name}</a>` -- a
+    RELATIVE url (no domain), unlike every other team link in this
+    module, but still matches TEAM_LINK_RE since that's a substring
+    search.
+
+    Returns one dict per row: {"player_yahoo_id", "player_name",
+    "league_id", "team_id", "team_name"}.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    table = None
+    for t in soup.find_all("table"):
+        if t.find(string=re.compile("Roster Status")):
+            table = t
+            break
+    if table is None:
+        return []
+
+    rows = table.find_all("tr")
+    players = []
+    for r in rows[2:]:
+        cells = r.find_all(["th", "td"])
+        if len(cells) < 5:
+            continue
+        name_link = cells[2].find("a", class_="name")
+        team_link = cells[4].find("a", href=TEAM_LINK_RE)
+        if name_link is None or team_link is None:
+            continue
+        pm = PLAYER_LINK_RE.search(name_link.get("href") or "")
+        ids = _team_id_from_href(team_link.get("href"))
+        players.append(
+            {
+                "player_yahoo_id": pm.group(1) if pm else None,
+                "player_name": name_link.get_text(" ", strip=True),
+                "league_id": ids[0] if ids else None,
+                "team_id": ids[1] if ids else None,
+                "team_name": team_link.get_text(" ", strip=True),
+            }
+        )
+    return players

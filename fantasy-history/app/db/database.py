@@ -144,6 +144,11 @@ def stored_daily_stat_delta_team_dates(conn: sqlite3.Connection, season_year: in
     return {(r["team_key"], r["snapshot_date"]) for r in rows}
 
 
+def upsert_roster_snapshot(conn: sqlite3.Connection, rows: Iterable[dict[str, Any]]) -> None:
+    for row in rows:
+        _upsert(conn, "roster_snapshots", row, ["snapshot_date", "team_key", "player_key"])
+
+
 def upsert_transaction(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     _upsert(conn, "transactions", row, ["transaction_key"])
 

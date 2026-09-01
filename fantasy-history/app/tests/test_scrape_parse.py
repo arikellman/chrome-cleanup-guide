@@ -200,6 +200,44 @@ class TestParseTeamDailyTotals(unittest.TestCase):
             self.assertNotIn(col, self.parsed["batting"])
 
 
+class TestParseTakenPlayersPage(unittest.TestCase):
+    def setUp(self):
+        self.players = parse.parse_taken_players_page(load("taken_players.html"))
+
+    def test_row_count(self):
+        self.assertEqual(len(self.players), 3)
+
+    def test_player_and_owning_team_captured(self):
+        by_name = {p["player_name"]: p for p in self.players}
+        misiorowski = by_name["Jacob Misiorowski"]
+        self.assertEqual(misiorowski["player_yahoo_id"], "60254")
+        self.assertEqual(misiorowski["league_id"], "74647")
+        self.assertEqual(misiorowski["team_id"], "9")
+        self.assertEqual(misiorowski["team_name"], "Prime Time")
+
+    def test_player_note_link_not_confused_with_name(self):
+        # cells[2] has TWO <a> tags (name + "Player Note") -- must extract
+        # from the one classed "name" specifically, not just any link.
+        schlittler = next(p for p in self.players if p["player_name"] == "Cam Schlittler")
+        self.assertEqual(schlittler["player_yahoo_id"], "64985")
+        self.assertNotIn("Player Note", schlittler["player_name"])
+
+    def test_full_team_name_not_css_truncated(self):
+        # Confirmed real: unlike the standings/draft pages (literal "..."
+        # in the text with a `title` fallback), this page's Roster Status
+        # column truncates purely via CSS (text-overflow: ellipsis) --
+        # the actual DOM text is always the full name already.
+        sale = next(p for p in self.players if p["player_name"] == "Chris Sale")
+        self.assertEqual(sale["team_name"], "Team Grimace (Gri-MAH-Chay)")
+
+    def test_relative_team_url_still_matches(self):
+        # This page's team links are relative ("/b1/74647/9"), unlike
+        # every other team link in this module (which are absolute) --
+        # confirm that still resolves correctly.
+        for p in self.players:
+            self.assertIsNotNone(p["team_id"])
+
+
 class TestSeasonNav(unittest.TestCase):
     def setUp(self):
         self.html = load("league_home.html")
@@ -682,6 +720,49 @@ class TestBackfillTransactionTimestamps(unittest.TestCase):
         self.conn.commit()
         result = jobs.backfill_transaction_timestamps(self.conn)
         self.assertEqual(result, {"checked": 1, "fixed": 0, "still_unparseable": 1})
+
+
+class TestIngestTakenPlayers(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_ingest_writes_roster_snapshot_rows(self):
+        result = jobs.ingest_taken_players_html(self.conn, load("taken_players.html"), 2026, "2026-09-01")
+        self.assertEqual(result, {"players": 3, "skipped": 0})
+
+        row = self.conn.execute(
+            "SELECT team_key, player_name FROM roster_snapshots "
+            "WHERE snapshot_date = '2026-09-01' AND player_key = 'mlb.p.60254'"
+        ).fetchone()
+        self.assertEqual(row["team_key"], "74647.t.9")
+        self.assertEqual(row["player_name"], "Jacob Misiorowski")
+
+    def test_ingest_is_idempotent(self):
+        jobs.ingest_taken_players_html(self.conn, load("taken_players.html"), 2026, "2026-09-01")
+        jobs.ingest_taken_players_html(self.conn, load("taken_players.html"), 2026, "2026-09-01")
+        count = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM roster_snapshots WHERE snapshot_date = '2026-09-01'"
+        ).fetchone()["c"]
+        self.assertEqual(count, 3)
+
+    def test_two_snapshot_dates_coexist_for_keeper_comparison(self):
+        # The whole point: capture the same league twice, months apart,
+        # and compare -- both dates' rows must survive side by side.
+        jobs.ingest_taken_players_html(self.conn, load("taken_players.html"), 2026, "2026-09-01")
+        jobs.ingest_taken_players_html(self.conn, load("taken_players.html"), 2026, "2026-09-28")
+        count = self.conn.execute("SELECT COUNT(*) AS c FROM roster_snapshots").fetchone()["c"]
+        self.assertEqual(count, 6)
+        kept = self.conn.execute(
+            "SELECT rs1.player_name FROM roster_snapshots rs1 "
+            "JOIN roster_snapshots rs2 ON rs1.player_key = rs2.player_key AND rs1.team_key = rs2.team_key "
+            "WHERE rs1.snapshot_date = '2026-09-01' AND rs2.snapshot_date = '2026-09-28'"
+        ).fetchall()
+        self.assertEqual({r["player_name"] for r in kept}, {"Jacob Misiorowski", "Cam Schlittler", "Chris Sale"})
 
 
 class TestIngestTeamDailyTotals(unittest.TestCase):

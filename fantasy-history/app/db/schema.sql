@@ -149,6 +149,24 @@ CREATE TABLE IF NOT EXISTS team_daily_stat_deltas (
 );
 CREATE INDEX IF NOT EXISTS idx_team_daily_stat_deltas_season ON team_daily_stat_deltas(season_year, stat_id);
 
+-- One row per (rostered player, team, date) -- captures who was on which
+-- manager's roster on a given day, from the league's "All Taken Players"
+-- list (see app/scrape/parse.py's parse_taken_players_page), not from any
+-- one team's own page. Built for keeper-eligibility tracking: a player is
+-- typically keeper-eligible only if they were on the SAME manager's
+-- roster on two specific dates (e.g. a season-defined cutoff date and the
+-- last day of the season) -- comparing two snapshot_dates' rows for a
+-- given team_key (INTERSECT on player_key) answers that directly.
+CREATE TABLE IF NOT EXISTS roster_snapshots (
+    snapshot_date TEXT NOT NULL,
+    season_year INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    player_key TEXT NOT NULL,
+    player_name TEXT,
+    PRIMARY KEY (snapshot_date, team_key, player_key)
+);
+CREATE INDEX IF NOT EXISTS idx_roster_snapshots_season ON roster_snapshots(season_year, team_key);
+
 CREATE TABLE IF NOT EXISTS transactions (
     transaction_key TEXT PRIMARY KEY,
     season_year INTEGER NOT NULL,

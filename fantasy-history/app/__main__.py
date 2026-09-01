@@ -1,4 +1,4 @@
-"""CLI entry point: python -m app <auth|pull|backfill|scrape-auth|scrape-season|scrape-daily-stats|fix-transaction-timestamps|serve|status>"""
+"""CLI entry point: python -m app <auth|pull|backfill|scrape-auth|scrape-season|scrape-daily-stats|fix-transaction-timestamps|scrape-roster-snapshot|keeper-eligibility|serve|status>"""
 from __future__ import annotations
 
 import argparse
@@ -407,6 +407,72 @@ def cmd_fix_transaction_timestamps(_args: argparse.Namespace) -> None:
         conn.close()
 
 
+def cmd_scrape_roster_snapshot(args: argparse.Namespace) -> None:
+    """Captures a league-wide roster snapshot (which players are on
+    which manager's roster) for one date, default today -- see
+    app/db/schema.sql's roster_snapshots comment for why: keeper
+    eligibility typically depends on a player being on the SAME
+    manager's roster on two specific dates. Run this again near the end
+    of the season, then use `python -m app keeper-eligibility` to compare.
+    """
+    from app.scrape import jobs as scrape_jobs
+
+    config = cfg.load_config()
+    league_id, season_year = _current_scrape_league_and_year(config)
+    conn = database.get_connection()
+    try:
+        result = scrape_jobs.scrape_roster_snapshot(conn, season_year, league_id, snapshot_date=args.date)
+        print(result)
+    finally:
+        conn.close()
+
+
+def cmd_keeper_eligibility(args: argparse.Namespace) -> None:
+    """Compares two roster snapshots (see cmd_scrape_roster_snapshot) and
+    prints, per team, every player who was on that SAME manager's roster
+    on BOTH dates -- the standard keeper-eligibility rule this was built
+    for ("must have been on a manager's roster on [date] and the last day
+    of the season")."""
+    config = cfg.load_config()
+    season_year = config.get("yahoo_web_current_season_year")
+    conn = database.get_connection()
+    try:
+        available = {
+            r["snapshot_date"]
+            for r in conn.execute(
+                "SELECT DISTINCT snapshot_date FROM roster_snapshots WHERE season_year = ?", (season_year,)
+            ).fetchall()
+        }
+        missing = [d for d in (args.start, args.end) if d not in available]
+        if missing:
+            print(f"No roster snapshot for: {', '.join(missing)}. Available dates: {sorted(available)}")
+            sys.exit(1)
+
+        rows = conn.execute(
+            """
+            SELECT COALESCE(t.name, rs1.team_key) AS team_name, rs1.player_name
+            FROM roster_snapshots rs1
+            JOIN roster_snapshots rs2
+                ON rs2.player_key = rs1.player_key AND rs2.team_key = rs1.team_key
+                AND rs2.season_year = rs1.season_year AND rs2.snapshot_date = ?
+            LEFT JOIN teams t ON t.team_key = rs1.team_key AND t.season_year = rs1.season_year
+            WHERE rs1.snapshot_date = ? AND rs1.season_year = ?
+            ORDER BY team_name, rs1.player_name
+            """,
+            (args.end, args.start, season_year),
+        ).fetchall()
+
+        by_team: dict[str, list[str]] = {}
+        for r in rows:
+            by_team.setdefault(r["team_name"], []).append(r["player_name"])
+        for team, players in by_team.items():
+            print(f"\n{team} -- {len(players)} eligible:")
+            for p in players:
+                print(f"  {p}")
+    finally:
+        conn.close()
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     from app.web.server import run_server
 
@@ -689,6 +755,21 @@ def main() -> None:
         help="One-time offline repair: recompute timestamp for transactions scraped before that fix, from raw_json already on file",
     )
     p_fix_tx_ts.set_defaults(func=cmd_fix_transaction_timestamps)
+
+    p_roster_snap = sub.add_parser(
+        "scrape-roster-snapshot",
+        help="Capture which players are on which manager's roster today (or a given date), for keeper tracking",
+    )
+    p_roster_snap.add_argument("--date", help="ISO date (YYYY-MM-DD) to snapshot. Default: today.")
+    p_roster_snap.set_defaults(func=cmd_scrape_roster_snapshot)
+
+    p_keeper = sub.add_parser(
+        "keeper-eligibility",
+        help="Compare two roster snapshots and list, per team, players eligible to keep (on that roster both dates)",
+    )
+    p_keeper.add_argument("--start", required=True, help="ISO date (YYYY-MM-DD) of the earlier snapshot")
+    p_keeper.add_argument("--end", required=True, help="ISO date (YYYY-MM-DD) of the later snapshot")
+    p_keeper.set_defaults(func=cmd_keeper_eligibility)
 
     p_serve = sub.add_parser("serve", help="Run the daily scheduler + dashboard web server")
     p_serve.add_argument("--host", default="127.0.0.1")

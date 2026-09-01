@@ -680,3 +680,113 @@ def scrape_backfill_daily_stats(
         current += dt.timedelta(days=1)
 
     return {"days_processed": processed, "errors": errors, "aborted_suspected_block": blocked}
+
+
+# ---------------------------------------------------------------------
+# Roster snapshots (league-wide "All Taken Players" list) -- for
+# keeper-eligibility tracking: capture who's on which manager's roster on
+# a given date, so a later snapshot on a different date can be compared.
+# ---------------------------------------------------------------------
+
+def taken_players_url(
+    league_id: str,
+    position: str,
+    season_year: int,
+    sport_path: str = SPORT_PATH_DEFAULT,
+    *,
+    base_url: str | None = None,
+) -> str:
+    """`position` is "B" (all batters) or "P" (all pitchers) -- confirmed
+    real for "P"; "B" is a reasonable, UNVERIFIED symmetric guess (see
+    parse.parse_taken_players_page's docstring)."""
+    return (
+        f"{league_home_url(league_id, sport_path, base_url=base_url)}/players"
+        f"?status=T&pos={position}&stat1=S_S_{season_year}"
+    )
+
+
+def ingest_taken_players_html(conn, html: str, season_year: int, snapshot_date: str) -> dict[str, Any]:
+    """Parses+writes one taken-players-page scrape into roster_snapshots.
+    Split out from scrape_pull_taken_players so tests can exercise it
+    against a fixture HTML string without a real browser."""
+    players = parse.parse_taken_players_page(html)
+    rows = []
+    skipped = 0
+    for p in players:
+        if p["team_id"] is None or p["player_yahoo_id"] is None:
+            logger.warning("Skipping taken-players row with no resolvable team/player id: %r", p)
+            skipped += 1
+            continue
+        team_key = identity.resolve_team_key(
+            conn, season_year, p["league_id"], p["team_id"], name=p["team_name"]
+        )
+        rows.append(
+            {
+                "snapshot_date": snapshot_date,
+                "season_year": season_year,
+                "team_key": team_key,
+                "player_key": f"mlb.p.{p['player_yahoo_id']}",
+                "player_name": p["player_name"],
+            }
+        )
+    database.upsert_roster_snapshot(conn, rows)
+    return {"players": len(rows), "skipped": skipped}
+
+
+def scrape_pull_taken_players(
+    conn,
+    season_year: int,
+    league_id: str,
+    position: str,
+    snapshot_date: str,
+    sport_path: str = SPORT_PATH_DEFAULT,
+    *,
+    base_url: str | None = None,
+    max_pages: int = 50,
+) -> dict[str, Any]:
+    """Walks every page of the "All Taken Players" list for one position
+    ("B" or "P") via click-based pagination -- confirmed real that this
+    page's "Next 25" link is AJAX-driven the same way /transactions is
+    (no incrementing offset in its href), so this goes straight to the
+    click fallback rather than trying a URL-param trick first.
+    """
+    pages_html = browser.paginate_by_click(
+        taken_players_url(league_id, position, season_year, sport_path, base_url=base_url),
+        row_selector="td.player",
+        max_pages=max_pages,
+    )
+    totals = {"players": 0, "skipped": 0}
+    for html in pages_html:
+        result = ingest_taken_players_html(conn, html, season_year, snapshot_date)
+        totals["players"] += result["players"]
+        totals["skipped"] += result["skipped"]
+    conn.commit()
+    return totals
+
+
+def scrape_roster_snapshot(
+    conn,
+    season_year: int,
+    league_id: str,
+    snapshot_date: str | None = None,
+    sport_path: str = SPORT_PATH_DEFAULT,
+    *,
+    base_url: str | None = None,
+) -> dict[str, Any]:
+    """Captures a full league-wide roster snapshot (batters + pitchers)
+    for one date (default: today) -- see roster_snapshots' schema.sql
+    comment for why: keeper eligibility typically depends on a player
+    being on the SAME manager's roster on two specific dates, which this
+    snapshot, taken twice months apart, is what makes comparable later
+    (see app/__main__.py's cmd_keeper_eligibility).
+    """
+    snapshot_date = snapshot_date or dt.date.today().isoformat()
+    totals = {"players": 0, "skipped": 0}
+    for position in ("B", "P"):
+        result = scrape_pull_taken_players(
+            conn, season_year, league_id, position, snapshot_date, sport_path, base_url=base_url
+        )
+        totals["players"] += result["players"]
+        totals["skipped"] += result["skipped"]
+    totals["snapshot_date"] = snapshot_date
+    return totals
