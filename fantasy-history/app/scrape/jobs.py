@@ -59,6 +59,31 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _parse_timestamp_text(timestamp_text: str | None, season_year: int) -> int | None:
+    """Parses Yahoo's scraped transaction timestamp text ("Aug 7, 11:41
+    am", no year -- the season_year is used instead, safe since an MLB
+    season never crosses a calendar year boundary) into a Unix epoch int.
+
+    Confirmed real and important: without this, every scraped
+    transaction's `timestamp` column was left NULL, and
+    app/web/server.py's `/api/transactions` sorts by `ORDER BY tr.timestamp
+    DESC` -- SQLite sorts NULLs as the smallest possible value, so in DESC
+    order every NULL-timestamp (i.e. every scraped) row sorted BELOW every
+    real-timestamped (API-era, pre-cutover) row, no matter how recent.
+    From the dashboard this looked exactly like "no transactions since
+    [the API cutover date]", when the data was actually there the whole
+    time -- just sorted to the bottom and never shown.
+    """
+    if not timestamp_text:
+        return None
+    try:
+        parsed = dt.datetime.strptime(f"{timestamp_text} {season_year}", "%b %d, %I:%M %p %Y")
+        return int(parsed.replace(tzinfo=dt.timezone.utc).timestamp())
+    except ValueError:
+        logger.warning("Could not parse transaction timestamp text %r", timestamp_text)
+        return None
+
+
 def league_home_url(league_id: str, sport_path: str = SPORT_PATH_DEFAULT, *, base_url: str | None = None) -> str:
     """Builds the league's base URL. Pass `base_url` (from
     app.scrape.season_nav.resolve_and_cache_season_league_id) for any
@@ -331,7 +356,7 @@ def ingest_transactions_html(conn, html: str, season_year: int, league_id: str) 
                 "season_year": season_year,
                 "type": tx_type,
                 "status": "scraped",
-                "timestamp": None,  # scraped timestamp is display text only, no epoch -- see raw_json
+                "timestamp": _parse_timestamp_text(tx["timestamp_text"], season_year),
                 "raw_json": tx["timestamp_text"],
             }
         )

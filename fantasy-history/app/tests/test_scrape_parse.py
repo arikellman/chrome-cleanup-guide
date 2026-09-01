@@ -8,6 +8,7 @@ copies of those multi-MB real files.
 """
 from __future__ import annotations
 
+import datetime as dt
 import sqlite3
 import unittest
 import unittest.mock
@@ -553,6 +554,34 @@ class TestIngestDraftResults(unittest.TestCase):
         self.assertEqual(rows[2]["round"], 2)
 
 
+class TestParseTransactionTimestamp(unittest.TestCase):
+    def test_parses_month_day_time_with_season_year(self):
+        epoch = jobs._parse_timestamp_text("Aug 7, 11:41 am", 2026)
+        self.assertIsNotNone(epoch)
+        parsed = dt.datetime.fromtimestamp(epoch, tz=dt.timezone.utc)
+        self.assertEqual((parsed.year, parsed.month, parsed.day, parsed.hour, parsed.minute), (2026, 8, 7, 11, 41))
+
+    def test_pm_time_parsed_correctly(self):
+        epoch = jobs._parse_timestamp_text("Sep 1, 2:15 pm", 2026)
+        parsed = dt.datetime.fromtimestamp(epoch, tz=dt.timezone.utc)
+        self.assertEqual(parsed.hour, 14)
+
+    def test_none_input_returns_none(self):
+        self.assertIsNone(jobs._parse_timestamp_text(None, 2026))
+
+    def test_unparseable_text_returns_none_not_raises(self):
+        self.assertIsNone(jobs._parse_timestamp_text("not a date", 2026))
+
+    def test_cross_month_ordering_is_correct(self):
+        # This is the actual bug: string-sorting "Aug"/"Jul"/"Sep" is NOT
+        # chronological order. Confirm the epoch values sort correctly
+        # across a month boundary, which a naive text comparison would not.
+        jul = jobs._parse_timestamp_text("Jul 21, 9:00 am", 2026)
+        aug = jobs._parse_timestamp_text("Aug 10, 9:00 am", 2026)
+        sep = jobs._parse_timestamp_text("Sep 1, 9:00 am", 2026)
+        self.assertTrue(jul < aug < sep)
+
+
 class TestIngestTransactions(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
@@ -590,6 +619,21 @@ class TestIngestTransactions(unittest.TestCase):
         self.assertEqual(dropped_row["movement"], "drop")
         self.assertEqual(dropped_row["source_team_key"], "74647.t.11")
         self.assertIsNone(dropped_row["dest_team_key"])
+
+    def test_timestamp_column_is_populated_not_null(self):
+        # Confirmed real and important: a NULL `timestamp` here made every
+        # scraped transaction sort to the bottom of /api/transactions'
+        # `ORDER BY tr.timestamp DESC` (SQLite sorts NULL as the smallest
+        # value), below every real-timestamped API-era row -- from the
+        # dashboard this looked exactly like "no transactions since the
+        # API cutover date", even though the rows were there all along.
+        jobs.ingest_transactions_html(self.conn, load("transactions.html"), 2026, "74647")
+        rows = self.conn.execute(
+            "SELECT timestamp FROM transactions WHERE season_year = 2026"
+        ).fetchall()
+        self.assertTrue(rows)
+        for r in rows:
+            self.assertIsNotNone(r["timestamp"])
 
     def test_ingest_is_idempotent(self):
         jobs.ingest_transactions_html(self.conn, load("transactions.html"), 2026, "74647")
