@@ -642,6 +642,48 @@ class TestIngestTransactions(unittest.TestCase):
         self.assertEqual(count, 3)
 
 
+class TestBackfillTransactionTimestamps(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_fixes_legacy_null_timestamps_from_raw_json_offline(self):
+        # Simulates real rows written before the timestamp fix: `raw_json`
+        # holds the display text (still true for every row, old or new),
+        # but `timestamp` is NULL. No scraping involved -- pure DB repair.
+        self.conn.execute(
+            "INSERT INTO transactions (transaction_key, season_year, type, status, timestamp, raw_json) "
+            "VALUES (?, ?, ?, ?, NULL, ?)",
+            ("legacy:1", 2026, "add", "scraped", "Jul 21, 9:00 am"),
+        )
+        self.conn.commit()
+        result = jobs.backfill_transaction_timestamps(self.conn)
+        self.assertEqual(result, {"checked": 1, "fixed": 1, "still_unparseable": 0})
+        row = self.conn.execute(
+            "SELECT timestamp FROM transactions WHERE transaction_key = 'legacy:1'"
+        ).fetchone()
+        self.assertIsNotNone(row["timestamp"])
+
+    def test_leaves_already_fixed_rows_alone(self):
+        jobs.ingest_transactions_html(self.conn, load("transactions.html"), 2026, "74647")
+        result = jobs.backfill_transaction_timestamps(self.conn)
+        self.assertEqual(result, {"checked": 0, "fixed": 0, "still_unparseable": 0})
+
+    def test_row_with_no_raw_json_counted_as_still_unparseable(self):
+        self.conn.execute(
+            "INSERT INTO transactions (transaction_key, season_year, type, status, timestamp, raw_json) "
+            "VALUES (?, ?, ?, ?, NULL, NULL)",
+            ("legacy:2", 2026, "add", "scraped"),
+        )
+        self.conn.commit()
+        result = jobs.backfill_transaction_timestamps(self.conn)
+        self.assertEqual(result, {"checked": 1, "fixed": 0, "still_unparseable": 1})
+
+
 class TestIngestTeamDailyTotals(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")

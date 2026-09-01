@@ -473,6 +473,34 @@ def scrape_pull_transactions(
     return totals
 
 
+def backfill_transaction_timestamps(conn) -> dict[str, Any]:
+    """One-time repair for rows written before `timestamp` was parsed
+    (every scraped transaction before this fix -- see
+    _parse_timestamp_text's docstring for the full story). Fully offline:
+    `raw_json` already holds the exact display text `timestamp` was always
+    meant to be derived from, so this recomputes it directly from what's
+    already in the database -- no re-scraping, no network calls, fixes
+    every affected row in one pass regardless of whether a future re-scrape
+    would ever happen to touch that particular transaction_key again.
+    """
+    rows = _rows(
+        conn.execute("SELECT transaction_key, season_year, raw_json FROM transactions WHERE timestamp IS NULL")
+    )
+    fixed = 0
+    still_unparseable = 0
+    for row in rows:
+        epoch = _parse_timestamp_text(row["raw_json"], row["season_year"])
+        if epoch is None:
+            still_unparseable += 1
+            continue
+        conn.execute(
+            "UPDATE transactions SET timestamp = ? WHERE transaction_key = ?", (epoch, row["transaction_key"])
+        )
+        fixed += 1
+    conn.commit()
+    return {"checked": len(rows), "fixed": fixed, "still_unparseable": still_unparseable}
+
+
 # ---------------------------------------------------------------------
 # Team page, single-day totals ("date hack" retroactive daily stats)
 # ---------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""CLI entry point: python -m app <auth|pull|backfill|scrape-auth|scrape-season|scrape-daily-stats|serve|status>"""
+"""CLI entry point: python -m app <auth|pull|backfill|scrape-auth|scrape-season|scrape-daily-stats|fix-transaction-timestamps|serve|status>"""
 from __future__ import annotations
 
 import argparse
@@ -390,6 +390,23 @@ def cmd_scrape_daily_stats(args: argparse.Namespace) -> None:
         conn.close()
 
 
+def cmd_fix_transaction_timestamps(_args: argparse.Namespace) -> None:
+    """One-time, fully offline repair for transactions written before
+    `timestamp` was parsed from the scraped display text (every scraped
+    transaction before that fix -- see app/scrape/jobs.py's
+    _parse_timestamp_text docstring). Recomputes directly from `raw_json`,
+    already in the database -- no re-scraping needed.
+    """
+    from app.scrape import jobs as scrape_jobs
+
+    conn = database.get_connection()
+    try:
+        result = scrape_jobs.backfill_transaction_timestamps(conn)
+        print(result)
+    finally:
+        conn.close()
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     from app.web.server import run_server
 
@@ -666,6 +683,12 @@ def main() -> None:
     )
     p_scrape_daily.add_argument("--until", help="ISO date (YYYY-MM-DD) to stop at. Default: today.")
     p_scrape_daily.set_defaults(func=cmd_scrape_daily_stats)
+
+    p_fix_tx_ts = sub.add_parser(
+        "fix-transaction-timestamps",
+        help="One-time offline repair: recompute timestamp for transactions scraped before that fix, from raw_json already on file",
+    )
+    p_fix_tx_ts.set_defaults(func=cmd_fix_transaction_timestamps)
 
     p_serve = sub.add_parser("serve", help="Run the daily scheduler + dashboard web server")
     p_serve.add_argument("--host", default="127.0.0.1")
