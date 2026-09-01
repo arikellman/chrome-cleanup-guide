@@ -116,10 +116,37 @@ def transactions_url(
     start: int | None = None,
     base_url: str | None = None,
 ) -> str:
+    """Builds a `?transactionsfilter=all&count=...` transactions URL.
+
+    CONFIRMED LIVE (directly from the user's own logged-in session, not a
+    guess): this URL shape -- including this function's own `count=25`
+    default with no `start` -- is Yahoo's SECOND page of transactions, not
+    the first. The true first/freshest page is the bare URL with no query
+    string at all (see `transactions_first_page_url`). scrape_pull_transactions
+    below no longer uses this function to seed its pagination for exactly
+    that reason; it's kept only in case some other caller wants a specific
+    `count=`/`start=` combination directly.
+    """
     url = f"{league_home_url(league_id, sport_path, base_url=base_url)}/transactions?transactionsfilter=all&count={count}"
     if start:
         url += f"&start={start}"
     return url
+
+
+def transactions_first_page_url(
+    league_id: str, sport_path: str = SPORT_PATH_DEFAULT, *, base_url: str | None = None
+) -> str:
+    """The TRUE first/freshest page of the league's transactions list: the
+    bare URL with no query string.
+
+    CONFIRMED LIVE by the user directly, from their own logged-in browser:
+    the bare URL showed entries through "Sep 1, 11:33 am" while
+    `transactions_url(..., count=25)` -- what scrape_pull_transactions
+    previously started from, believing it to be page 1 -- was actually one
+    page further back in time (Yahoo's page 2). Every prior scrape
+    therefore permanently skipped the newest ~25 transactions on each pull.
+    """
+    return f"{league_home_url(league_id, sport_path, base_url=base_url)}/transactions"
 
 
 # ---------------------------------------------------------------------
@@ -400,69 +427,39 @@ def scrape_pull_transactions(
     max_pages: int = 50,
     base_url: str | None = None,
 ) -> dict[str, Any]:
-    """Fetches and ingests every transactions page for this league.
+    """Fetches and ingests every transactions page for this league, via
+    click-based pagination starting from the TRUE first page (the bare
+    URL -- see `transactions_first_page_url`).
 
-    Pagination mechanism -- decision tree in priority order:
+    This previously started from `transactions_url(count=25)`, believing
+    that to be page 1 because it was the first URL/params combination
+    confirmed to render real rows in a live run. It is not: the user
+    confirmed directly, from their own logged-in browser, that the bare
+    URL (no query string) is page 1, and `?transactionsfilter=all&
+    count=25` is actually page 2 -- so every prior pull permanently
+    skipped the newest ~25 transactions (matching the "still missing
+    recent days" symptom seen even right after the timestamp-sorting fix).
 
-      1. Start from `count=25` -- the exact URL/params confirmed to render
-         real rows in a live run (an earlier speculative `count=1000`
-         first attempt came back with an EMPTY, hidden table live --
-         confirmed against a real Yahoo session -- so that guess is
-         dropped entirely rather than wasting a request on it every pull).
-      2. Try a `start=` offset for page 2 (`count=25&start=25`), comparing
-         its first row against page 1's to confirm Yahoo is actually
-         honoring the offset (rather than silently re-serving page 1).
-         This mirrors the same semicolon-path convention app/jobs/daily.py
-         already confirmed works for the API's
-         `transactions;count=25;start={offset}` -- but that was the JSON
-         API, and this is a `?query=string` HTML page, so it is NOT
-         assumed to carry over; it's tried, not trusted.
-      3. If the URL-param trick doesn't change the returned rows, fall
-         back to app.scrape.browser.paginate_by_click, which drives a real
-         click on the page's "Next 25" link and re-scrapes after each
-         click -- confirmed necessary at least as a fallback, since the
-         saved sample page's "Next 25" link's href was IDENTICAL to the
-         current page's URL (no incrementing `start=` visible anywhere),
-         strongly suggesting this page is AJAX-driven rather than a
-         plain paginated GET.
+    Also drops the old `count=25`/`start=25` URL-param pagination attempt
+    that used to run before falling back to clicking: it was already
+    falling through to the click-based path on every real run observed
+    (the saved sample page's "Next 25" link href was IDENTICAL to the
+    current page's URL, with no incrementing `start=` anywhere -- this
+    page is AJAX-driven, not a plain paginated GET), so trying the
+    URL-param path first was wasted requests even before the page-1 bug
+    was found.
 
     Stops fetching more pages once a page comes back with zero
     transactions (end of history) or `max_pages` is hit. Waits for an
     actual row (not just the table shell, which is present in the DOM
     almost immediately but stays empty/hidden until populated -- confirmed
-    live) via `wait_selector=".Tst-transaction-table tr"`.
+    live) via `row_selector=".Tst-transaction-table tr"`.
     """
-    row_wait = ".Tst-transaction-table tr"
-    page1_html = browser.fetch_page(transactions_url(league_id, sport_path, count=25, base_url=base_url), wait_selector=row_wait)
-    page1_rows = parse.parse_transactions(page1_html)
-    page2_html = browser.fetch_page(
-        transactions_url(league_id, sport_path, count=25, start=25, base_url=base_url), wait_selector=row_wait
+    all_html = browser.paginate_by_click(
+        transactions_first_page_url(league_id, sport_path, base_url=base_url),
+        row_selector=".Tst-transaction-table tr",
+        max_pages=max_pages,
     )
-    page2_rows = parse.parse_transactions(page2_html)
-    page1_first_ids = {p["player_yahoo_id"] for tx in page1_rows[:1] for p in tx["players"]}
-    page2_first_ids = {p["player_yahoo_id"] for tx in page2_rows[:1] for p in tx["players"]}
-
-    if page2_rows and page1_first_ids != page2_first_ids:
-        # start= is honored (page 2 actually differs from page 1). Keep
-        # paging with it.
-        all_html = [page1_html, page2_html]
-        start = 50
-        while len(all_html) < max_pages:
-            page_html = browser.fetch_page(
-                transactions_url(league_id, sport_path, count=25, start=start, base_url=base_url), wait_selector=row_wait
-            )
-            if not parse.parse_transactions(page_html):
-                break
-            all_html.append(page_html)
-            start += 25
-    else:
-        # start= wasn't honored (page 2 repeats page 1, or came back
-        # empty when it shouldn't have) -- drive real clicks instead.
-        all_html = browser.paginate_by_click(
-            transactions_url(league_id, sport_path, count=25, base_url=base_url),
-            row_selector=".Tst-transaction-table tr",
-            max_pages=max_pages,
-        )
 
     totals = {"transactions": 0, "players": 0}
     for html in all_html:
