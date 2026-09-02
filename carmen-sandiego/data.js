@@ -25,12 +25,15 @@
  *   id       - unique slug
  *   name     - crook's full alias (e.g. "Sarah Nade")
  *   gender   - "male" | "female" | "unknown" (unknown = revealed as a clue)
+ *   height   - height description (e.g. "5'11\"")
  *   hair     - hair color/description
- *   build    - height/build description
+ *   build    - build/physique description
  *   quirk    - a distinguishing habit/accessory
- *   hobby    - a favorite hobby/food/interest
- *   These five traits (gender, hair, build, quirk, hobby) are the "warrant
- *   attributes." The game reveals them one at a time as description clues.
+ *   sport    - a favorite sport, phrased as what the crook does
+ *              (e.g. "plays pickup ice hockey every chance they get")
+ *   These six traits (gender, height, hair, build, quirk, sport) are the
+ *   "warrant attributes." The game reveals them one at a time as description
+ *   clues.
  *
  * CASE (optional, for hand-authored cases instead of random ones):
  *   loot      - what was stolen
@@ -148,6 +151,18 @@ const CITIES = [
     ],
   },
   {
+    id: "chicago",
+    name: "Chicago",
+    country: "United States",
+    continent: "North America",
+    facts: [
+      "famous for a deep-dish style of pizza baked in a pan",
+      "a giant silver, bean-shaped sculpture reflects the skyline downtown",
+      "known as the Windy City, sitting on the shore of a Great Lake",
+      "home to one of the tallest skyscrapers in the country",
+    ],
+  },
+  {
     id: "mexico-city",
     name: "Mexico City",
     country: "Mexico",
@@ -169,6 +184,18 @@ const CITIES = [
       "a famous stone archway gate faces the harbor",
       "monsoon rains soak the city every summer",
       "spices and street food fill the markets day and night",
+    ],
+  },
+  {
+    id: "jerusalem",
+    name: "Jerusalem",
+    country: "Israel",
+    continent: "Asia",
+    facts: [
+      "an ancient walled Old City sits at its historic heart",
+      "sacred sites for three major world religions stand within blocks of each other",
+      "known for a bustling open-air market called a shuk",
+      "one of the oldest continuously inhabited cities in the world",
     ],
   },
   {
@@ -202,46 +229,51 @@ const SUSPECTS = [
     id: "sarah-nade",
     name: "Sarah Nade",
     gender: "female",
+    height: "5'11\"",
     hair: "fiery red hair",
     build: "tall and athletic",
     quirk: "always seen wearing mirrored sunglasses, even indoors",
-    hobby: "collects antique pocket watches",
+    sport: "plays pickup ice hockey every chance she gets",
   },
   {
     id: "rob-yew-blind",
     name: "Rob Yu Blind",
     gender: "male",
+    height: "5'5\"",
     hair: "slicked-back black hair",
     build: "short and stocky",
     quirk: "constantly chewing on an unlit cigar",
-    hobby: "an avid stamp collector",
+    sport: "never misses a table tennis tournament",
   },
   {
     id: "polly-ester",
     name: "Polly Ester",
     gender: "female",
+    height: "5'6\"",
     hair: "bleached blonde bob",
     build: "average height, wiry",
     quirk: "wears a different loud patterned scarf every day",
-    hobby: "obsessed with vintage roller skating",
+    sport: "competes in roller derby under a stage name",
   },
   {
     id: "max-imum",
     name: "Max Imum",
     gender: "male",
+    height: "6'4\"",
     hair: "bald, with a thin mustache",
     build: "large and broad-shouldered",
     quirk: "carries an oversized pocket calculator everywhere",
-    hobby: "collects rare chess sets",
+    sport: "arm-wrestles at every dive bar in town",
   },
   {
     id: "ivy-legue",
     name: "Ivy Legue",
     gender: "female",
+    height: "5'1\"",
     hair: "silver-streaked black hair in a tight bun",
     build: "petite and precise in movement",
     quirk: "always sipping tea from a tiny porcelain cup",
-    hobby: "an amateur ornithologist who bird-watches everywhere she goes",
+    sport: "trains as a competitive figure skater",
   },
 ];
 
@@ -250,10 +282,11 @@ const CARMEN = {
   id: "carmen-sandiego",
   name: "Carmen Sandiego",
   gender: "female",
+  height: "5'10\"",
   hair: "raven black hair",
   build: "tall, moves like a fencer",
   quirk: "always wears a long red trench coat and matching fedora",
-  hobby: "a connoisseur of the world's greatest stolen art",
+  sport: "fences competitively, épée specialist",
 };
 
 /*
@@ -272,8 +305,12 @@ const CARMEN = {
  */
 const CASES = [];
 
-// Minimum number of warrant attributes (out of 5) the player must collect
-// before a warrant can be issued for the current suspect.
+// Minimum number of warrant attributes (out of 6) the player must collect
+// before a warrant can be issued for the current suspect. Kept at 4 (rather
+// than a stricter 5) because the Rookie/Sleuth ranks only have a 3-city
+// trail: gender (given at the briefing) plus one description witness per
+// city stop caps out at 4 known attributes there, so a higher requirement
+// would make the warrant impossible to obtain on the shorter early cases.
 const WARRANT_ATTRIBUTES_REQUIRED = 4;
 
 // Starting time budget, in in-game hours, per rank (index 0 = first case).

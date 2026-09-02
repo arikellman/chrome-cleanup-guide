@@ -5,13 +5,14 @@
  * text/cities/suspects here; add them to data.js instead.
  * ========================================================================== */
 
-const ATTR_KEYS = ["gender", "hair", "build", "quirk", "hobby"];
+const ATTR_KEYS = ["gender", "height", "hair", "build", "quirk", "sport"];
 const ATTR_LABELS = {
   gender: "Gender",
+  height: "Height",
   hair: "Hair",
   build: "Build",
   quirk: "Distinguishing habit",
-  hobby: "Hobby/interest",
+  sport: "Favorite sport",
 };
 
 let state = null;
@@ -56,10 +57,11 @@ function factToClue(fact) {
 function attrToClue(key, value) {
   const templates = {
     gender: (v) => `Word is the crook is ${v === "female" ? "a woman" : v === "male" ? "a man" : v}.`,
+    height: (v) => `A witness pegged the crook's height at about ${v}.`,
     hair: (v) => `Someone noticed the crook has ${v}.`,
     build: (v) => `A witness described the crook as ${v}.`,
     quirk: (v) => `I noticed the crook was ${v}.`,
-    hobby: (v) => `Rumor has it the crook ${v}.`,
+    sport: (v) => `Rumor has it the crook ${v}.`,
   };
   return templates[key](value);
 }
