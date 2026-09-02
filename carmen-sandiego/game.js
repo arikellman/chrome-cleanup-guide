@@ -249,12 +249,26 @@ function setScreen(html) {
 
 function statusBarHtml() {
   const rank = RANKS[state.rankIndex];
+  const timePct = Math.max(0, Math.min(100, Math.round((state.timeRemaining / rank.timeBudget) * 100)));
   return `
-    <div class="statusbar">
-      <span>RANK: ${rank.title}</span>
-      <span>CASE: ${state.rankIndex + 1} / ${RANKS.length}</span>
-      <span>TIME LEFT: ${state.timeRemaining}h</span>
-      <span>WARRANT: ${state.hasWarrant ? "ISSUED" : "none"}</span>
+    <div class="statgrid">
+      <div class="stat">
+        <div class="stat-label">Rank</div>
+        <div class="stat-value">${rank.title}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Case</div>
+        <div class="stat-value">${state.rankIndex + 1} of ${RANKS.length}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Time left</div>
+        <div class="stat-value">${state.timeRemaining}h</div>
+        <div class="progress-track"><div class="progress-fill ${timePct <= 25 ? "low" : ""}" style="width:${timePct}%"></div></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Warrant</div>
+        <div class="stat-value ${state.hasWarrant ? "badge-on" : "badge-off"}">${state.hasWarrant ? "Issued" : "None"}</div>
+      </div>
     </div>`;
 }
 
@@ -263,14 +277,16 @@ function renderBriefing() {
   const sceneCity = kase.trail[0];
   setScreen(`
     ${statusBarHtml()}
-    <div class="panel">
-      <h2>ACME CRIME ALERT</h2>
+    <div class="card">
+      <div class="card-title">ACME Crime Alert</div>
       <p>${kase.loot} has been stolen! Our only lead: the trail starts in
       <strong>${sceneCity.name}, ${sceneCity.country}</strong>.</p>
       <p>Suspect gender: <strong>${kase.suspect.gender}</strong> (confirmed by witnesses at the scene).</p>
       <p class="muted">Question witnesses to build a warrant profile and follow
       the trail. Time is limited — move quickly but carefully.</p>
-      <button onclick="acceptBriefing()">Fly to ${sceneCity.name}</button>
+      <div class="actionrow">
+        <button class="btn btn-primary" onclick="acceptBriefing()">Fly to ${sceneCity.name}</button>
+      </div>
     </div>
   `);
 }
@@ -288,47 +304,49 @@ function renderCity() {
 
   let html = `
     ${statusBarHtml()}
-    <div class="panel">
-      <h2>${city.name}, ${city.country}</h2>
-      <p class="muted">${
+    <div class="card">
+      <div class="card-title">${city.name}, ${city.country}</div>
+      <p class="card-subtitle">${
         atFinal
           ? "This looks like the crook's current hideout."
           : onTrail
           ? "The trail is still warm here."
           : "Nobody here has heard of the crook — wrong city."
       }</p>
-      <h3>Talk to witnesses</h3>
-      <div class="btnlist">
+      <div class="section-label">Talk to witnesses</div>
+      <div class="chip-grid">
         ${witnesses
           .map(
             (w) =>
-              `<button onclick="questionWitness('${w.id}')" ${
-                state.visitedWitnessesThisCity.has(w.id) ? "class=\"visited\"" : ""
-              }>${w.name}${state.visitedWitnessesThisCity.has(w.id) ? " ✓" : ""}</button>`
+              `<button class="chip ${state.visitedWitnessesThisCity.has(w.id) ? "visited" : ""}" onclick="questionWitness('${w.id}')">${w.name}${
+                state.visitedWitnessesThisCity.has(w.id) ? " ✓" : ""
+              }</button>`
           )
           .join("")}
       </div>
-      <div id="witness-output" class="output"></div>
-      <h3>Warrant profile so far</h3>
-      <ul class="attrs">
+      <div id="witness-output" class="clue-feed"></div>
+      <div class="section-label">Warrant profile so far</div>
+      <ul class="attr-grid">
         ${ATTR_KEYS.map(
           (k) =>
-            `<li class="${k in state.knownAttrs ? "known" : "unknown"}">${ATTR_LABELS[k]}: ${
-              k in state.knownAttrs ? state.knownAttrs[k] : "???"
-            }</li>`
+            `<li class="attr-item ${k in state.knownAttrs ? "known" : "unknown"}">
+              <span class="attr-mark">${k in state.knownAttrs ? "✓" : "?"}</span>
+              <span class="attr-label">${ATTR_LABELS[k]}:</span>
+              <span class="attr-value">${k in state.knownAttrs ? state.knownAttrs[k] : "unknown"}</span>
+            </li>`
         ).join("")}
       </ul>
       <div class="actionrow">
-        <button ${canGetWarrant() ? "" : "disabled"} onclick="issueWarrant()">
+        <button class="btn ${canGetWarrant() ? "btn-primary" : ""}" ${canGetWarrant() ? "" : "disabled"} onclick="issueWarrant()">
           ${state.hasWarrant ? "Warrant already issued" : "Request warrant from Interpol"}
         </button>
         ${
           atFinal
-            ? `<button class="danger" onclick="attemptArrest()">Attempt arrest</button>`
+            ? `<button class="btn btn-danger" onclick="attemptArrest()">Attempt arrest</button>`
             : ""
         }
-        <button onclick="openTravel()">Travel to another city</button>
-        <button onclick="openAlmanac()">Consult almanac</button>
+        <button class="btn" onclick="openTravel()">Travel to another city</button>
+        <button class="btn" onclick="openAlmanac()">Consult almanac</button>
       </div>
     </div>
   `;
@@ -362,7 +380,7 @@ function questionWitness(witnessId) {
     line = pick(DEADEND_LINES);
   }
 
-  byId("witness-output").innerHTML = `<p class="clue"><strong>${w.name} says:</strong> ${line}</p>`;
+  byId("witness-output").innerHTML = `<div class="clue"><span class="clue-icon">💬</span><div class="clue-body"><strong>${w.name}</strong>${line}</div></div>`;
   checkTimeOut();
   render_status_only();
 }
@@ -383,20 +401,22 @@ function openTravel() {
 
   setScreen(`
     ${statusBarHtml()}
-    <div class="panel">
-      <h2>ACME Travel Bureau</h2>
-      <p class="muted">Pick a destination based on the clues you've gathered. Wrong guesses cost time.</p>
+    <div class="card">
+      <div class="card-title">ACME Travel Bureau</div>
+      <p class="card-subtitle">Pick a destination based on the clues you've gathered. Wrong guesses cost time.</p>
       ${CONTINENTS.map(
         (cont) => `
-        <h3>${cont}</h3>
-        <div class="btnlist">
-          ${grouped[cont]
-            .map((c) => `<button onclick="travelTo('${c.id}')">${c.name}, ${c.country}</button>`)
-            .join("")}
+        <div class="continent-group">
+          <div class="section-label">${cont}</div>
+          <div class="chip-grid">
+            ${grouped[cont]
+              .map((c) => `<button class="chip" onclick="travelTo('${c.id}')">${c.name}, ${c.country}</button>`)
+              .join("")}
+          </div>
         </div>`
       ).join("")}
       <div class="actionrow">
-        <button onclick="render()">Cancel</button>
+        <button class="btn" onclick="render()">Cancel</button>
       </div>
     </div>
   `);
@@ -405,18 +425,19 @@ function openTravel() {
 function openAlmanac() {
   setScreen(`
     ${statusBarHtml()}
-    <div class="panel">
-      <h2>World Almanac</h2>
-      <p class="muted">Reference facts for every city on file. Cross-check witness clues against these.</p>
+    <div class="card">
+      <div class="card-title">World Almanac</div>
+      <p class="card-subtitle">Reference facts for every city on file. Cross-check witness clues against these.</p>
       ${CITIES.map(
         (c) => `
         <div class="almanac-entry">
-          <strong>${c.name}, ${c.country}</strong> (${c.continent})
+          <span class="almanac-title">${c.name}, ${c.country}</span>
+          <span class="almanac-country"> — ${c.continent}</span>
           <ul>${c.facts.map((f) => `<li>${f}</li>`).join("")}</ul>
         </div>`
       ).join("")}
       <div class="actionrow">
-        <button onclick="render()">Back</button>
+        <button class="btn" onclick="render()">Back</button>
       </div>
     </div>
   `);
@@ -457,7 +478,7 @@ function issueWarrant() {
 function attemptArrest() {
   if (!isAtFinalCity()) return;
   if (!state.hasWarrant) {
-    byId("witness-output").innerHTML = `<p class="clue bad">Interpol won't let you make an arrest without a warrant!</p>`;
+    byId("witness-output").innerHTML = `<div class="clue bad"><span class="clue-icon">🚫</span><div class="clue-body">Interpol won't let you make an arrest without a warrant!</div></div>`;
     return;
   }
   state.gameOver = true;
@@ -485,30 +506,31 @@ function renderGameOver() {
   if (state.win) {
     const isFinal = state.rankIndex === RANKS.length - 1;
     setScreen(`
-      <div class="panel center">
-        <h2>CASE CLOSED</h2>
+      <div class="card center">
+        <div class="eyebrow" style="display:inline-block;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--success);background:var(--success-soft);padding:4px 12px;border-radius:999px;margin-bottom:14px;">Case closed</div>
+        <div class="card-title">You got them!</div>
         <p>You caught <strong>${state.currentCase.suspect.name}</strong> in
         ${cityById(state.currentCityId).name} with time to spare!</p>
         ${
           isFinal
-            ? `<p class="clue">You've caught Carmen Sandiego herself. Welcome to the ACME Hall of Fame!</p>
-               <p>Final score: ${state.score}</p>
-               <button onclick="newGame()">Play again</button>`
+            ? `<div class="clue" style="text-align:left;"><span class="clue-icon">🏆</span><div class="clue-body">You've caught Carmen Sandiego herself. Welcome to the ACME Hall of Fame!</div></div>
+               <p>Final score: <strong>${state.score}</strong></p>
+               <div class="actionrow" style="justify-content:center;"><button class="btn btn-primary" onclick="newGame()">Play again</button></div>`
             : `<p>Promoted to <strong>${
                 RANKS[state.rankIndex + 1] ? RANKS[state.rankIndex + 1].title : RANKS[state.rankIndex].title
               }</strong>!</p>
-               <button onclick="nextCase()">Continue to next case</button>`
+               <div class="actionrow" style="justify-content:center;"><button class="btn btn-primary" onclick="nextCase()">Continue to next case</button></div>`
         }
       </div>
     `);
   } else {
     setScreen(`
-      <div class="panel center">
-        <h2>CASE GONE COLD</h2>
+      <div class="card center">
+        <div class="card-title">Case gone cold</div>
         <p>You ran out of time. ${state.currentCase.suspect.name} got away.</p>
-        <p>The suspect was: <strong>${state.currentCase.suspect.name}</strong>
+        <p class="muted">The suspect was: <strong>${state.currentCase.suspect.name}</strong>
         (${ATTR_KEYS.map((k) => state.currentCase.suspect[k]).join(", ")})</p>
-        <button onclick="newGame()">Start over</button>
+        <div class="actionrow" style="justify-content:center;"><button class="btn btn-primary" onclick="newGame()">Start over</button></div>
       </div>
     `);
   }
