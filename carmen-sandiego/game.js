@@ -121,6 +121,8 @@ function newGame() {
     rankIndex: 0,
     solvedSuspectIds: [],
     score: 0,
+    currentStreak: 0,
+    stats: { bestStreak: 0, wrongTurns: 0, hintsUsed: 0, falseArrests: 0 },
   };
   startCase();
 }
@@ -136,6 +138,8 @@ function startCase() {
   state.knownAttrs = {}; // key -> value, revealed so far
   state.hasWarrant = false;
   state.visitedWitnessesThisCity = new Set();
+  state.cityWitnesses = null;
+  state.lineup = null;
   state.gameOver = false;
   state.win = false;
 
@@ -157,7 +161,22 @@ function isAtFinalCity() {
  * WITNESSES
  * ------------------------------------------------------------------------ */
 
+// Odds that a description witness and a destination witness turn out to be
+// the same chatty person, handing over both clues for the price of one.
+const HOT_TIP_CHANCE = 0.3;
+
+// The witness list for the current city is rolled once on arrival and then
+// cached (state.cityWitnesses), so it can't reshuffle itself — including the
+// rare "hot tip" merge below — between renders while the player is still
+// deciding who to talk to.
 function witnessesForCurrentCity() {
+  if (!state.cityWitnesses) {
+    state.cityWitnesses = generateWitnessesForCity();
+  }
+  return state.cityWitnesses;
+}
+
+function generateWitnessesForCity() {
   const kase = state.currentCase;
 
   // A wrong-guess detour: nobody here has ever heard of the crook.
@@ -195,6 +214,25 @@ function witnessesForCurrentCity() {
         fact: f,
       });
     });
+  }
+
+  // Rare "hot tip": merge the description witness and one destination
+  // witness into a single chatty informant who hands over both clues.
+  const descIdx = list.findIndex((w) => w.type === "description");
+  const destIdx = list.findIndex((w) => w.type === "destination");
+  if (descIdx !== -1 && destIdx !== -1 && Math.random() < HOT_TIP_CHANCE) {
+    const desc = list[descIdx];
+    const dest = list[destIdx];
+    const merged = list.filter((_, i) => i !== descIdx && i !== destIdx);
+    merged.push({
+      id: "w-hottip",
+      name: "A chatty informant ⭐",
+      type: "combo",
+      key: desc.key,
+      fact: dest.fact,
+    });
+    list.length = 0;
+    list.push(...merged);
   }
 
   if (atFinal) {
@@ -268,6 +306,12 @@ function statusBarHtml() {
       <div class="stat">
         <div class="stat-label">Warrant</div>
         <div class="stat-value ${state.hasWarrant ? "badge-on" : "badge-off"}">${state.hasWarrant ? "Issued" : "None"}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Streak</div>
+        <div class="stat-value ${state.currentStreak > 0 ? "badge-on" : "badge-off"}">${
+    state.currentStreak > 0 ? "🔥 " + state.currentStreak : "—"
+  }</div>
       </div>
     </div>`;
 }
@@ -347,6 +391,11 @@ function renderCity() {
         }
         <button class="btn" onclick="openTravel()">Travel to another city</button>
         <button class="btn" onclick="openAlmanac()">Consult almanac</button>
+        ${
+          !atFinal && onTrail
+            ? `<button class="btn" onclick="requestHint()">📡 Call ACME HQ (-20h)</button>`
+            : ""
+        }
       </div>
     </div>
   `;
@@ -374,6 +423,10 @@ function questionWitness(witnessId) {
     line = attrToClue(w.key, value);
   } else if (w.type === "destination") {
     line = factToClue(w.fact);
+  } else if (w.type === "combo") {
+    const value = state.currentCase.suspect[w.key];
+    state.knownAttrs[w.key] = value;
+    line = `Lucky break — ${attrToClue(w.key, value)} And get this: ${factToClue(w.fact)}`;
   } else if (w.type === "final") {
     line = `"That's them! They're holed up right around here — go, go!"`;
   } else {
@@ -455,16 +508,32 @@ function travelTo(cityId, isFirstTravel) {
     const nextOnTrail = state.trailIndex < trail.length - 1 ? trail[state.trailIndex + 1] : null;
     if (nextOnTrail && nextOnTrail.id === cityId) {
       state.trailIndex++;
+      state.currentStreak++;
+      state.stats.bestStreak = Math.max(state.stats.bestStreak, state.currentStreak);
+    } else {
+      // Wrong-guess detour: trailIndex doesn't move, so isOnTrail() will be
+      // false at this new city and witnesses go quiet.
+      state.currentStreak = 0;
+      state.stats.wrongTurns++;
     }
-    // Otherwise this is a wrong-guess detour: trailIndex doesn't move, so
-    // isOnTrail() will be false at this new city and witnesses go quiet.
   }
 
   state.currentCityId = cityId;
   state.visitedWitnessesThisCity = new Set();
+  state.cityWitnesses = null;
 
   if (checkTimeOut()) return;
   render();
+}
+
+function requestHint() {
+  if (isAtFinalCity() || !isOnTrail()) return;
+  const nextCity = state.currentCase.trail[state.trailIndex + 1];
+  spendTime(20);
+  state.stats.hintsUsed++;
+  if (checkTimeOut()) return;
+  render();
+  byId("witness-output").innerHTML = `<div class="clue hint"><span class="clue-icon">📡</span><div class="clue-body"><strong>ACME HQ</strong>Satellite traces show them heading toward ${nextCity.continent}.</div></div>`;
 }
 
 function issueWarrant() {
@@ -481,10 +550,71 @@ function attemptArrest() {
     byId("witness-output").innerHTML = `<div class="clue bad"><span class="clue-icon">🚫</span><div class="clue-body">Interpol won't let you make an arrest without a warrant!</div></div>`;
     return;
   }
+  renderLineup();
+}
+
+// The lineup: the real suspect plus a couple of decoys pulled from the rest
+// of the roster, so the warrant profile actually has to be matched rather
+// than the arrest being a formality.
+function buildLineup() {
+  const kase = state.currentCase;
+  const pool = SUSPECTS.concat([CARMEN]).filter((s) => s.id !== kase.suspect.id);
+  const decoys = shuffle(pool).slice(0, 2);
+  return shuffle([kase.suspect, ...decoys]);
+}
+
+function renderLineup() {
+  if (!state.lineup) state.lineup = buildLineup();
+  setScreen(`
+    ${statusBarHtml()}
+    <div class="card">
+      <div class="card-title">Lineup at the local precinct</div>
+      <p class="card-subtitle">Match the warrant profile to the right suspect. Pick wrong and they'll slip away in the confusion.</p>
+      <div class="lineup-grid">
+        ${state.lineup
+          .map(
+            (s) => `
+          <div class="lineup-card">
+            <div class="lineup-name">${s.name}</div>
+            <ul class="lineup-traits">
+              ${ATTR_KEYS.map((k) => `<li>${ATTR_LABELS[k]}: ${s[k]}</li>`).join("")}
+            </ul>
+            <button class="btn btn-primary btn-full" onclick="confirmArrest('${s.id}')">This is them — arrest</button>
+          </div>`
+          )
+          .join("")}
+      </div>
+      <div class="actionrow">
+        <button class="btn" onclick="cancelLineup()">Back without arresting</button>
+      </div>
+    </div>
+  `);
+}
+
+function cancelLineup() {
+  state.lineup = null;
+  render();
+}
+
+function confirmArrest(suspectId) {
+  const kase = state.currentCase;
+  state.lineup = null;
+  if (suspectId === kase.suspect.id) {
+    finalizeWin();
+    return;
+  }
+  state.stats.falseArrests++;
+  spendTime(12);
+  if (checkTimeOut()) return;
+  render();
+  byId("witness-output").innerHTML = `<div class="clue bad"><span class="clue-icon">🙅</span><div class="clue-body">Wrong suspect! In the confusion, the real crook slips further away.</div></div>`;
+}
+
+function finalizeWin() {
   state.gameOver = true;
   state.win = true;
   state.solvedSuspectIds.push(state.currentCase.suspect.id);
-  state.score += state.timeRemaining;
+  state.score += state.timeRemaining + state.currentStreak * 5;
   render();
 }
 
@@ -502,6 +632,32 @@ function checkTimeOut() {
   return false;
 }
 
+// A title based on how the whole playthrough went, shown only at the true
+// end of the game (final win or a loss), so it doesn't slow down the
+// case-to-case pace.
+function reportCardTitle(stats) {
+  if (stats.wrongTurns === 0 && stats.hintsUsed === 0 && stats.falseArrests === 0) {
+    return "Globetrotter Prodigy";
+  }
+  if (stats.falseArrests >= 2) return "Trigger-Happy Rookie";
+  if (stats.hintsUsed >= 3) return "Persistent Investigator";
+  if (stats.wrongTurns >= 3) return "Scenic Route Specialist";
+  return "Solid Detective";
+}
+
+function reportCardHtml() {
+  const s = state.stats;
+  return `
+    <div class="section-label">Case file report</div>
+    <ul class="attr-grid">
+      <li class="attr-item known"><span class="attr-mark">🏅</span><span class="attr-label">Title:</span><span class="attr-value">${reportCardTitle(s)}</span></li>
+      <li class="attr-item known"><span class="attr-mark">🔥</span><span class="attr-label">Best streak:</span><span class="attr-value">${s.bestStreak}</span></li>
+      <li class="attr-item ${s.wrongTurns ? "unknown" : "known"}"><span class="attr-mark">🧭</span><span class="attr-label">Wrong turns:</span><span class="attr-value">${s.wrongTurns}</span></li>
+      <li class="attr-item ${s.hintsUsed ? "unknown" : "known"}"><span class="attr-mark">📡</span><span class="attr-label">Hints used:</span><span class="attr-value">${s.hintsUsed}</span></li>
+      <li class="attr-item ${s.falseArrests ? "unknown" : "known"}"><span class="attr-mark">🙅</span><span class="attr-label">False arrests:</span><span class="attr-value">${s.falseArrests}</span></li>
+    </ul>`;
+}
+
 function renderGameOver() {
   if (state.win) {
     const isFinal = state.rankIndex === RANKS.length - 1;
@@ -515,6 +671,7 @@ function renderGameOver() {
           isFinal
             ? `<div class="clue" style="text-align:left;"><span class="clue-icon">🏆</span><div class="clue-body">You've caught Carmen Sandiego herself. Welcome to the ACME Hall of Fame!</div></div>
                <p>Final score: <strong>${state.score}</strong></p>
+               <div style="text-align:left;">${reportCardHtml()}</div>
                <div class="actionrow" style="justify-content:center;"><button class="btn btn-primary" onclick="newGame()">Play again</button></div>`
             : `<p>Promoted to <strong>${
                 RANKS[state.rankIndex + 1] ? RANKS[state.rankIndex + 1].title : RANKS[state.rankIndex].title
@@ -530,6 +687,7 @@ function renderGameOver() {
         <p>You ran out of time. ${state.currentCase.suspect.name} got away.</p>
         <p class="muted">The suspect was: <strong>${state.currentCase.suspect.name}</strong>
         (${ATTR_KEYS.map((k) => state.currentCase.suspect[k]).join(", ")})</p>
+        <div style="text-align:left;">${reportCardHtml()}</div>
         <div class="actionrow" style="justify-content:center;"><button class="btn btn-primary" onclick="newGame()">Start over</button></div>
       </div>
     `);
@@ -548,6 +706,9 @@ window.openAlmanac = openAlmanac;
 window.travelTo = travelTo;
 window.issueWarrant = issueWarrant;
 window.attemptArrest = attemptArrest;
+window.confirmArrest = confirmArrest;
+window.cancelLineup = cancelLineup;
+window.requestHint = requestHint;
 window.newGame = newGame;
 window.nextCase = nextCase;
 window.render = render;
