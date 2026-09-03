@@ -44,26 +44,62 @@ function travelCost(fromCity, toCity) {
   return fromCity.continent === toCity.continent ? 24 : 54;
 }
 
+function cap(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Strips everything but letters/digits and lowercases, so a player's typed
+// answer can match the source text regardless of punctuation, quotes, or
+// capitalization differences.
+function normalizeForCompare(s) {
+  return (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 function factToClue(fact) {
   const templates = [
     (f) => `A local told me the crook kept asking about a place ${f}.`,
     (f) => `Someone mentioned the crook seemed very interested in a place ${f}.`,
     (f) => `A witness overheard the crook mention heading somewhere ${f}.`,
     (f) => `The crook bought a guidebook to a place ${f}.`,
+    (f) => `"They kept talking about a place ${f}," one local recalled.`,
+    (f) => `Word is the crook was hunting for tickets to a place ${f}.`,
   ];
   return pick(templates)(fact);
 }
 
 function attrToClue(key, value) {
   const templates = {
-    gender: (v) => `Word is the crook is ${v === "female" ? "a woman" : v === "male" ? "a man" : v}.`,
-    height: (v) => `A witness pegged the crook's height at about ${v}.`,
-    hair: (v) => `Someone noticed the crook has ${v}.`,
-    build: (v) => `A witness described the crook as ${v}.`,
-    quirk: (v) => `I noticed the crook was ${v}.`,
-    sport: (v) => `Rumor has it the crook ${v}.`,
+    gender: [
+      (v) => `Word is the crook is ${v === "female" ? "a woman" : v === "male" ? "a man" : v}.`,
+      (v) => `Witnesses agree on this much: the crook is ${v === "female" ? "a woman" : v === "male" ? "a man" : v}.`,
+    ],
+    height: [
+      (v) => `A witness pegged the crook's height at about ${v}.`,
+      (v) => `Someone guessed the crook stands around ${v} tall.`,
+      (v) => `"Not hard to spot in a crowd," one witness said. "About ${v}."`,
+    ],
+    hair: [
+      (v) => `Someone noticed the crook has ${v}.`,
+      (v) => `A witness recalled ${v} — hard to miss, they said.`,
+      (v) => `"They had ${v}," one bystander remembered clearly.`,
+    ],
+    build: [
+      (v) => `A witness described the crook as ${v}.`,
+      (v) => `"Picture someone ${v}," said one onlooker.`,
+      (v) => `Build-wise, more than one person called them ${v}.`,
+    ],
+    quirk: [
+      (v) => `I noticed the crook was ${v}.`,
+      (v) => `One odd detail stuck with a witness: the crook was ${v}.`,
+      (v) => `"You'd remember them," said a witness. "${cap(v)}."`,
+    ],
+    sport: [
+      (v) => `Rumor has it the crook ${v}.`,
+      (v) => `Word around town is the crook ${v}.`,
+      (v) => `A witness mentioned, almost in passing, that the crook ${v}.`,
+    ],
   };
-  return templates[key](value);
+  return pick(templates[key])(value);
 }
 
 /* --------------------------------------------------------------------------
@@ -137,7 +173,8 @@ function startCase() {
   state.trailIndex = 0; // player is heading to kase.trail[0]
   state.currentCityId = null; // not arrived anywhere yet
   state.timeRemaining = rank.timeBudget;
-  state.knownAttrs = {}; // key -> value, revealed so far
+  state.knownAttrs = {}; // key -> value, but only once the player has correctly typed it in
+  state.revealedAttrs = new Set(); // keys a witness has mentioned, whether or not typed in yet
   state.hasWarrant = false;
   state.visitedWitnessesThisCity = new Set();
   state.cityWitnesses = null;
@@ -196,7 +233,7 @@ function generateWitnessesForCity() {
   const list = [];
 
   // Description clue witness (one unrevealed attribute), unless all revealed.
-  const unrevealed = ATTR_KEYS.filter((k) => !(k in state.knownAttrs));
+  const unrevealed = ATTR_KEYS.filter((k) => !state.revealedAttrs.has(k));
   if (unrevealed.length) {
     list.push({
       id: "w-desc",
@@ -228,7 +265,7 @@ function generateWitnessesForCity() {
     const merged = list.filter((_, i) => i !== descIdx && i !== destIdx);
     merged.push({
       id: "w-hottip",
-      name: "A chatty informant ⭐",
+      name: pick(PLAIN_WITNESS_NAMES),
       type: "combo",
       key: desc.key,
       fact: dest.fact,
@@ -260,6 +297,24 @@ const DEADEND_LINES = [
   "\"You should ask down at the market, not me.\"",
   "\"I've got nothing for you today.\"",
   "\"Can't help you — try someone else around here.\"",
+  "\"Wish I could help, but you've got the wrong person.\"",
+  "\"No idea what you're talking about, honestly.\"",
+];
+
+const HOT_TIP_INTROS = [
+  "Lucky break —",
+  "Turns out this one's a talker —",
+  "Didn't expect this, but —",
+];
+
+// Deliberately mundane names, so a hot-tip witness looks exactly like any
+// other witness in the list until the player actually questions them.
+const PLAIN_WITNESS_NAMES = [
+  "A local shopkeeper",
+  "A curious bystander",
+  "A market vendor",
+  "A friendly local",
+  "An off-duty guide",
 ];
 
 /* --------------------------------------------------------------------------
@@ -338,7 +393,11 @@ function renderBriefing() {
 }
 
 function acceptBriefing() {
+  // Gender comes straight from the case briefing, not from an investigation
+  // step, so it's the one attribute that's known immediately rather than
+  // requiring the player to type it in.
   state.knownAttrs.gender = state.currentCase.suspect.gender;
+  state.revealedAttrs.add("gender");
   travelTo(state.currentCase.trail[0].id, true);
 }
 
@@ -372,15 +431,9 @@ function renderCity() {
       </div>
       <div id="witness-output" class="clue-feed"></div>
       <div class="section-label">Warrant profile so far</div>
+      <p class="muted" style="margin-top:-4px;">Type in what a witness told you to confirm it on the warrant.</p>
       <ul class="attr-grid">
-        ${ATTR_KEYS.map(
-          (k) =>
-            `<li class="attr-item ${k in state.knownAttrs ? "known" : "unknown"}">
-              <span class="attr-mark">${k in state.knownAttrs ? "✓" : "?"}</span>
-              <span class="attr-label">${ATTR_LABELS[k]}:</span>
-              <span class="attr-value">${k in state.knownAttrs ? state.knownAttrs[k] : "unknown"}</span>
-            </li>`
-        ).join("")}
+        ${ATTR_KEYS.map((k) => attrRowHtml(k)).join("")}
       </ul>
       <div class="actionrow">
         <button class="btn ${canGetWarrant() ? "btn-primary" : ""}" ${canGetWarrant() ? "" : "disabled"} onclick="issueWarrant()">
@@ -404,6 +457,50 @@ function renderCity() {
   setScreen(html);
 }
 
+function attrRowHtml(k) {
+  if (k in state.knownAttrs) {
+    return `<li class="attr-item known">
+      <span class="attr-mark">✓</span>
+      <span class="attr-label">${ATTR_LABELS[k]}:</span>
+      <span class="attr-value">${state.knownAttrs[k]}</span>
+    </li>`;
+  }
+  if (state.revealedAttrs.has(k)) {
+    return `<li class="attr-item pending">
+      <div class="attr-item-top">
+        <span class="attr-mark">?</span>
+        <span class="attr-label">${ATTR_LABELS[k]}:</span>
+      </div>
+      <div class="attr-input-row">
+        <input type="text" id="attr-input-${k}" class="attr-input" placeholder="What did the witness say?"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();submitAttr('${k}');}">
+        <button class="attr-check" onclick="submitAttr('${k}')">Check</button>
+      </div>
+      <div class="attr-error-msg" id="attr-error-${k}"></div>
+    </li>`;
+  }
+  return `<li class="attr-item unknown">
+    <span class="attr-mark">?</span>
+    <span class="attr-label">${ATTR_LABELS[k]}:</span>
+    <span class="attr-value">unknown</span>
+  </li>`;
+}
+
+function submitAttr(key) {
+  const input = byId("attr-input-" + key);
+  if (!input) return;
+  const guess = normalizeForCompare(input.value);
+  const actual = normalizeForCompare(state.currentCase.suspect[key]);
+  if (guess && guess === actual) {
+    state.knownAttrs[key] = state.currentCase.suspect[key];
+    render_status_only();
+  } else {
+    input.classList.add("error");
+    const err = byId("attr-error-" + key);
+    if (err) err.textContent = "Doesn't match what you heard yet — check the clue and try again.";
+  }
+}
+
 function canGetWarrant() {
   return (
     !state.hasWarrant &&
@@ -421,14 +518,14 @@ function questionWitness(witnessId) {
   let line;
   if (w.type === "description") {
     const value = state.currentCase.suspect[w.key];
-    state.knownAttrs[w.key] = value;
+    state.revealedAttrs.add(w.key);
     line = attrToClue(w.key, value);
   } else if (w.type === "destination") {
     line = factToClue(w.fact);
   } else if (w.type === "combo") {
     const value = state.currentCase.suspect[w.key];
-    state.knownAttrs[w.key] = value;
-    line = `Lucky break — ${attrToClue(w.key, value)} And get this: ${factToClue(w.fact)}`;
+    state.revealedAttrs.add(w.key);
+    line = `${pick(HOT_TIP_INTROS)} ${attrToClue(w.key, value)} And get this: ${factToClue(w.fact)}`;
   } else if (w.type === "final") {
     line = `"That's them! They're holed up right around here — go, go!"`;
   } else {
@@ -703,6 +800,7 @@ function nextCase() {
 
 window.acceptBriefing = acceptBriefing;
 window.questionWitness = questionWitness;
+window.submitAttr = submitAttr;
 window.openTravel = openTravel;
 window.openAlmanac = openAlmanac;
 window.travelTo = travelTo;
