@@ -226,14 +226,14 @@ const CITIES = [
 
 const SUSPECTS = [
   {
-    id: "sarah-nade",
-    name: "Sarah Nade",
+    id: "melinavtal",
+    name: "Melinavtal Namllek",
     gender: "female",
-    height: "5'11\"",
-    hair: "fiery red hair",
-    build: "tall and athletic",
-    quirk: "always seen wearing mirrored sunglasses, even indoors",
-    sport: "plays pickup ice hockey every chance she gets",
+    height: "5'1\"",
+    hair: "light brown curly",
+    build: "short and athletic",
+    quirk: "covers short distances by doing cartwheels instead of walking",
+    sport: "plays pickup roller hockey every chance she gets",
   },
   {
     id: "rob-yew-blind",
@@ -269,7 +269,7 @@ const SUSPECTS = [
     id: "ivy-legue",
     name: "Ivy Legue",
     gender: "female",
-    height: "5'1\"",
+    height: "5'8\"",
     hair: "silver-streaked black hair in a tight bun",
     build: "petite and precise in movement",
     quirk: "always sipping tea from a tiny porcelain cup",
