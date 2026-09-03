@@ -173,8 +173,9 @@ function startCase() {
   state.trailIndex = 0; // player is heading to kase.trail[0]
   state.currentCityId = null; // not arrived anywhere yet
   state.timeRemaining = rank.timeBudget;
-  state.knownAttrs = {}; // key -> value, but only once the player has correctly typed it in
-  state.revealedAttrs = new Set(); // keys a witness has mentioned, whether or not typed in yet
+  state.knownAttrs = {}; // key -> value, but only once the player has correctly picked it
+  state.revealedAttrs = new Set(); // keys a witness has mentioned, whether or not picked yet
+  state.attrOptions = {}; // key -> shuffled [correct value, ...decoys], cached per case
   state.hasWarrant = false;
   state.visitedWitnessesThisCity = new Set();
   state.cityWitnesses = null;
@@ -431,7 +432,7 @@ function renderCity() {
       </div>
       <div id="witness-output" class="clue-feed"></div>
       <div class="section-label">Warrant profile so far</div>
-      <p class="muted" style="margin-top:-4px;">Type in what a witness told you to confirm it on the warrant.</p>
+      <p class="muted" style="margin-top:-4px;">Pick what a witness told you to confirm it on the warrant.</p>
       <ul class="attr-grid">
         ${ATTR_KEYS.map((k) => attrRowHtml(k)).join("")}
       </ul>
@@ -457,6 +458,17 @@ function renderCity() {
   setScreen(html);
 }
 
+// A couple of decoy values pulled from other suspects' (and Carmen's) same
+// attribute, so the dropdown isn't a giveaway of exactly one real option.
+function buildAttrOptions(key, correctValue) {
+  const pool = SUSPECTS.concat([CARMEN])
+    .map((s) => s[key])
+    .filter((v) => normalizeForCompare(v) !== normalizeForCompare(correctValue));
+  const uniquePool = Array.from(new Map(pool.map((v) => [normalizeForCompare(v), v])).values());
+  const decoys = shuffle(uniquePool).slice(0, 2);
+  return shuffle([correctValue, ...decoys]);
+}
+
 function attrRowHtml(k) {
   if (k in state.knownAttrs) {
     return `<li class="attr-item known">
@@ -466,16 +478,19 @@ function attrRowHtml(k) {
     </li>`;
   }
   if (state.revealedAttrs.has(k)) {
+    if (!state.attrOptions[k]) {
+      state.attrOptions[k] = buildAttrOptions(k, state.currentCase.suspect[k]);
+    }
+    const options = state.attrOptions[k];
     return `<li class="attr-item pending">
       <div class="attr-item-top">
         <span class="attr-mark">?</span>
         <span class="attr-label">${ATTR_LABELS[k]}:</span>
       </div>
-      <div class="attr-input-row">
-        <input type="text" id="attr-input-${k}" class="attr-input" placeholder="What did the witness say?"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();submitAttr('${k}');}">
-        <button class="attr-check" onclick="submitAttr('${k}')">Check</button>
-      </div>
+      <select id="attr-select-${k}" class="attr-select" onchange="submitAttr('${k}')">
+        <option value="" disabled selected>What did the witness say?</option>
+        ${options.map((v) => `<option value="${v.replace(/"/g, "&quot;")}">${v}</option>`).join("")}
+      </select>
       <div class="attr-error-msg" id="attr-error-${k}"></div>
     </li>`;
   }
@@ -487,17 +502,17 @@ function attrRowHtml(k) {
 }
 
 function submitAttr(key) {
-  const input = byId("attr-input-" + key);
-  if (!input) return;
-  const guess = normalizeForCompare(input.value);
+  const select = byId("attr-select-" + key);
+  if (!select || !select.value) return;
+  const guess = normalizeForCompare(select.value);
   const actual = normalizeForCompare(state.currentCase.suspect[key]);
-  if (guess && guess === actual) {
+  if (guess === actual) {
     state.knownAttrs[key] = state.currentCase.suspect[key];
     render_status_only();
   } else {
-    input.classList.add("error");
+    select.value = "";
     const err = byId("attr-error-" + key);
-    if (err) err.textContent = "Doesn't match what you heard yet — check the clue and try again.";
+    if (err) err.textContent = "That's not what the witness described — try again.";
   }
 }
 

@@ -349,14 +349,8 @@ button {
 
 .attr-item.pending .attr-mark { color: var(--warning); }
 
-.attr-input-row {
-  display: flex;
-  gap: 6px;
-}
-
-.attr-input {
-  flex: 1;
-  min-width: 0;
+.attr-select {
+  width: 100%;
   font: inherit;
   font-size: 13px;
   padding: 6px 8px;
@@ -364,32 +358,12 @@ button {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-}
-
-.attr-input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.attr-input.error {
-  border-color: var(--danger);
-}
-
-.attr-check {
-  flex-shrink: 0;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 6px 12px;
   cursor: pointer;
 }
 
-.attr-check:hover {
-  border-color: var(--accent);
+.attr-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .attr-error-msg {
