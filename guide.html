@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Computer Cleanup Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+  :root {
+    --bg: #0f1117; --surface: #181c27; --border: #252b3b;
+    --accent: #3b82f6; --accent2: #10b981; --warn: #f59e0b; --danger: #ef4444;
+    --text: #e2e8f0; --muted: #64748b; --code-bg: #0d1117;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif; font-weight: 300; line-height: 1.7; padding: 40px 20px 80px; }
+  .container { max-width: 820px; margin: 0 auto; }
+  header { border-bottom: 1px solid var(--border); padding-bottom: 28px; margin-bottom: 36px; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 10px; }
+  .subtitle { color: var(--muted); font-size: 14px; }
+  .warning-box { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.3); border-left: 3px solid var(--danger); border-radius: 6px; padding: 16px 18px; margin-bottom: 36px; font-size: 14px; }
+  .warning-box strong { color: var(--danger); }
+  .phase { margin-bottom: 44px; }
+  .phase-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .phase-num { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; flex-shrink: 0; }
+  .phase-num.auto { background: rgba(59,130,246,.15); color: var(--accent); border: 1px solid rgba(59,130,246,.3); }
+  .phase-num.manual { background: rgba(245,158,11,.12); color: var(--warn); border: 1px solid rgba(245,158,11,.3); }
+  .phase-title { font-size: 17px; font-weight: 600; }
+  .phase-tag { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; padding: 2px 8px; border-radius: 3px; margin-left: auto; }
+  .tag-auto { background: rgba(59,130,246,.15); color: var(--accent); }
+  .tag-manual { background: rgba(245,158,11,.12); color: var(--warn); }
+  .step { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; margin-bottom: 10px; display: flex; gap: 16px; }
+  .step-icon { font-size: 18px; flex-shrink: 0; margin-top: 2px; }
+  .step-content { flex: 1; }
+  .step-title { font-weight: 600; font-size: 15px; margin-bottom: 5px; }
+  .step-desc { color: #94a3b8; font-size: 14px; }
+  code { font-family: 'IBM Plex Mono', monospace; font-size: 12px; background: var(--code-bg); border: 1px solid var(--border); padding: 2px 7px; border-radius: 4px; color: #93c5fd; }
+  .download-btn { display: inline-block; margin-top: 12px; background: var(--accent); color: white; border: none; border-radius: 8px; padding: 14px 26px; font-size: 15px; font-weight: 600; text-decoration: none; }
+  .download-btn:hover { background: #2563eb; }
+  .burner-rules { background: rgba(239,68,68,.06); border: 1px solid rgba(239,68,68,.25); border-radius: 8px; padding: 22px 24px; margin-top: 36px; }
+  .burner-rules h3 { color: var(--danger); font-size: 15px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 14px; font-family: 'IBM Plex Mono', monospace; }
+  .rule { display: flex; gap: 10px; margin-bottom: 8px; font-size: 14px; }
+  .rule-icon { color: var(--danger); flex-shrink: 0; }
+  .checklist { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .check-item { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: #94a3b8; cursor: pointer; }
+  .check-item input[type=checkbox] { margin-top: 3px; accent-color: var(--accent2); width: 15px; height: 15px; flex-shrink: 0; }
+  .check-item.done { text-decoration: line-through; color: var(--muted); }
+  .progress-bar-wrap { background: var(--border); border-radius: 99px; height: 6px; margin-bottom: 32px; overflow: hidden; }
+  .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; transition: width .4s ease; width: 0%; }
+  .progress-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .screenshot-note { background: var(--code-bg); border: 1px dashed var(--border); border-radius: 6px; padding: 10px 14px; margin-top: 10px; font-size: 13px; color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Computer Cleanup Guide</h1>
+    <p class="subtitle">Follow the steps below in order. Everything is click-based — nothing to type.</p>
+  </header>
+
+  <div class="warning-box">
+    <strong>Do not log into your bank or 1Password on this computer</strong> until every step below is finished and Ari has confirmed it's safe.
+  </div>
+
+  <div class="progress-label" id="progress-label">Progress — 0 of 8 steps complete</div>
+  <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+
+  <!-- STEP 1 -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num auto">1</div>
+      <div class="phase-title">Download and run the Cleanup Tool</div>
+      <span class="phase-tag tag-auto">Fully automatic</span>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">📥</div>
+      <div class="step-content">
+        <div class="step-title">Click the button below to download</div>
+        <div class="step-desc">
+          <a class="download-btn" href="CleanupTool.zip" download>⬇ Download Cleanup Tool</a>
+          <div class="screenshot-note">It will land in your "Downloads" folder, probably at the bottom of your screen in a small bar, or check the Downloads folder icon on your taskbar.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">📂</div>
+      <div class="step-content">
+        <div class="step-title">Open the downloaded file</div>
+        <div class="step-desc">
+          Find the file called <code>CleanupTool.zip</code> and <strong>right-click</strong> on it. Choose <strong>"Extract All..."</strong> from the menu that appears, then click the <strong>"Extract"</strong> button on the next window.
+          <div class="screenshot-note">This creates a new folder called "CleanupTool" with two files inside.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🖱️</div>
+      <div class="step-content">
+        <div class="step-title">Double-click "Run-Cleanup"</div>
+        <div class="step-desc">
+          Open the new CleanupTool folder and double-click the file named <strong>Run-Cleanup</strong>.<br><br>
+          A blue box will pop up asking for permission — click <strong>"Yes"</strong>.<br><br>
+          A black window will open with white text scrolling by. <strong>This is normal — leave it alone</strong> and let it run. It will take a few minutes.<br><br>
+          When it says <strong>"ALL DONE!"</strong>, you can close the window.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num manual">2</div>
+      <div class="phase-title">Run two more scans (click-only, no typing)</div>
+      <span class="phase-tag tag-manual">Click-through</span>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🛡️</div>
+      <div class="step-content">
+        <div class="step-title">Open Malwarebytes and remove threats</div>
+        <div class="step-desc">
+          Open Malwarebytes from your desktop or Start menu. If it shows a list of items found, make sure they are all checked, then click the button labeled <strong>"Quarantine"</strong>. If it asks to restart the computer, click <strong>"Yes, restart now."</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🧹</div>
+      <div class="step-content">
+        <div class="step-title">Run AdwCleaner</div>
+        <div class="step-desc">
+          Open your Desktop, then the <strong>CleanupTools</strong> folder. Double-click <strong>AdwCleaner</strong>. Click <strong>"Scan Now."</strong> When it finishes, click <strong>"Quarantine."</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🔍</div>
+      <div class="step-content">
+        <div class="step-title">Run HitmanPro</div>
+        <div class="step-desc">
+          In the same <strong>CleanupTools</strong> folder, double-click <strong>HitmanPro</strong>. Click <strong>"Next"</strong> to start scanning. When it's done, click <strong>"Next"</strong> again to remove anything it finds.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num auto">3</div>
+      <div class="phase-title">Get Chrome back with your bookmarks</div>
+      <span class="phase-tag tag-auto">Fully automatic</span>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🌐</div>
+      <div class="step-content">
+        <div class="step-title">Install Chrome again</div>
+        <div class="step-desc">
+          Open the blue <strong>Edge</strong> browser (it's already on your computer). Type <code>google.com/chrome</code> in the address bar at the top and press Enter. Click the blue <strong>"Download Chrome"</strong> button, then open the downloaded file and click through the installer.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">⭐</div>
+      <div class="step-content">
+        <div class="step-title">Bring your bookmarks back</div>
+        <div class="step-desc">
+          Open the new Chrome. Click the <strong>three dots</strong> in the top-right corner → <strong>Bookmarks</strong> → <strong>Import Bookmarks and Settings</strong>. Choose <strong>"Bookmarks HTML file"</strong> and select the file on your Desktop inside the CleanupTools folder called <strong>bookmarks_backup</strong>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHECKLIST -->
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:22px 24px; margin-bottom:28px;">
+    <div style="font-weight:600; margin-bottom:14px;">✅ Check off as you go</div>
+    <div class="checklist" id="checklist">
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Downloaded and ran the Cleanup Tool</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Ran Malwarebytes and restarted</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Ran AdwCleaner</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Ran HitmanPro</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Installed Chrome again</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Brought back my bookmarks</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Called or texted Ari</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Waiting for Ari before using any passwords</label>
+    </div>
+  </div>
+
+  <div class="burner-rules">
+    <h3>Until Ari says it's safe</h3>
+    <div class="rule"><span class="rule-icon">✗</span> <span>No banking or Zelle</span></div>
+    <div class="rule"><span class="rule-icon">✗</span> <span>No 1Password</span></div>
+    <div class="rule"><span class="rule-icon">✗</span> <span>No typing passwords for important accounts</span></div>
+    <div class="rule"><span class="rule-icon">✓</span> <span style="color:#94a3b8">Streaming and news sites are fine</span></div>
+  </div>
+
+</div>
+
+<script>
+  function updateProgress() {
+    const boxes = document.querySelectorAll('#checklist input[type=checkbox]');
+    const total = boxes.length;
+    const done = [...boxes].filter(b => b.checked).length;
+    const pct = Math.round((done / total) * 100);
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('progress-label').textContent = `Progress — ${done} of ${total} steps complete`;
+    boxes.forEach(b => { b.closest('.check-item').classList.toggle('done', b.checked); });
+  }
+</script>
+</body>
+</html>
