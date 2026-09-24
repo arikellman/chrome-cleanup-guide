@@ -66,7 +66,7 @@
     <strong>Do not log into your bank or 1Password on this computer</strong> until every step below is finished and Ari has confirmed it's safe.
   </div>
 
-  <div class="progress-label" id="progress-label">Progress — 0 of 16 steps complete</div>
+  <div class="progress-label" id="progress-label">Progress — 0 of 17 steps complete</div>
   <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
 
   <!-- STEP 0: EVIDENCE -->
@@ -231,6 +231,7 @@
           A blue box will pop up asking for permission — click <strong>"Yes"</strong>.<br><br>
           A black window will open with white text scrolling by. <strong>This is normal — leave it alone</strong> and let it run. It will take a few minutes.<br><br>
           When it says <strong>"ALL DONE!"</strong>, you can close the window.
+          <div class="screenshot-note">Heads up: this saves your bookmarks and a list of your extensions, but not anything Chrome had autofill-saved, like stored credit cards or addresses. If you had any of that saved, you'll just need to re-enter it in the new Chrome later — nothing to do about it now.</div>
         </div>
       </div>
     </div>
@@ -294,6 +295,16 @@
     </div>
 
     <div class="step">
+      <div class="step-icon">🙅</div>
+      <div class="step-content">
+        <div class="step-title">Skip signing in for now</div>
+        <div class="step-desc">
+          When the new Chrome opens, it may ask you to sign in with your Google account. <strong>Skip that for now</strong> — just close the prompt or tap "Not now." You don't need to sign in to get your bookmarks back (that's the next step). Signing in and turning sync on before Ari has looked things over could quietly bring back anything bad that had synced to your Google account. Ari will let you know once it's fine to sign in as usual.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
       <div class="step-icon">⭐</div>
       <div class="step-content">
         <div class="step-title">Bring your bookmarks back</div>
@@ -321,6 +332,7 @@
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Ran AdwCleaner</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Ran HitmanPro</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Installed Chrome again</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Skipped signing into Google for now</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Brought back my bookmarks</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Called or texted Ari</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Waiting for Ari before using any passwords</label>
