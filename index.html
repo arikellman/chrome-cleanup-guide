@@ -26,11 +26,13 @@
   .phase-num.auto { background: rgba(77,124,219,.14); color: var(--accent); border: 1px solid rgba(77,124,219,.3); }
   .phase-num.manual { background: rgba(201,138,44,.14); color: var(--warn); border: 1px solid rgba(201,138,44,.3); }
   .phase-num.evidence { background: rgba(139,107,216,.14); color: var(--evidence); border: 1px solid rgba(139,107,216,.3); }
+  .phase-num.lock { background: rgba(33,154,114,.14); color: var(--accent2); border: 1px solid rgba(33,154,114,.3); }
   .phase-title { font-size: 17px; font-weight: 600; color: var(--text); }
   .phase-tag { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; padding: 2px 8px; border-radius: 3px; margin-left: auto; }
   .tag-auto { background: rgba(77,124,219,.14); color: var(--accent); }
   .tag-manual { background: rgba(201,138,44,.14); color: var(--warn); }
   .tag-evidence { background: rgba(139,107,216,.14); color: var(--evidence); }
+  .tag-lock { background: rgba(33,154,114,.14); color: var(--accent2); }
   .step { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; margin-bottom: 10px; display: flex; gap: 16px; box-shadow: 0 1px 2px rgba(51,64,92,.05); }
   .step-icon { font-size: 18px; flex-shrink: 0; margin-top: 2px; }
   .step-content { flex: 1; }
@@ -65,7 +67,7 @@
     <strong>Do not log into your bank or 1Password on this computer</strong> until every step below is finished and Ari has confirmed it's safe.
   </div>
 
-  <div class="progress-label" id="progress-label">Progress — 0 of 12 steps complete</div>
+  <div class="progress-label" id="progress-label">Progress — 0 of 16 steps complete</div>
   <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
 
   <!-- STEP 0: EVIDENCE -->
@@ -128,6 +130,67 @@
         <div class="step-title">Send the screenshots to Ari, whenever is convenient</div>
         <div class="step-desc">
           Text or email whatever screenshots you took to Ari — there's no rush, and no need to wait for a reply before moving on to the next step below. Send everything you screenshotted, even if none of it looks important to you. Ari will take a look when he's free and sort out what matters.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 0.5: LOCK THE DOORS -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-num lock">🔒</div>
+      <div class="phase-title">A few safety check-ups, still on your phone</div>
+      <span class="phase-tag tag-lock">Still your phone, no rush</span>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🛋️</div>
+      <div class="step-content">
+        <div class="step-title">Why this helps</div>
+        <div class="step-desc">
+          Think of this like changing the locks, just to be safe — a few quick check-ups on your phone so your accounts can only be reached by you. None of this is urgent, and there's nothing here you can get wrong. Take your time.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🚪</div>
+      <div class="step-content">
+        <div class="step-title">Sign out of other devices on your email account</div>
+        <div class="step-desc">
+          1. On your phone, open a web browser and go to <code>myaccount.google.com</code> (or the equivalent security page for whichever email you use).<br><br>
+          2. Tap <strong>"Security"</strong>, then look for something like <strong>"Your devices"</strong> and tap <strong>"Manage all devices"</strong>.<br><br>
+          3. You'll see a list of things signed into your account. This is just a tidy-up — if you see a device you don't recognize, tap it and choose <strong>"Sign out"</strong>. If everything looks familiar, that's great too — nothing more to do here.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🔄</div>
+      <div class="step-content">
+        <div class="step-title">Give your email password a quick refresh</div>
+        <div class="step-desc">
+          While you're in the same Security settings, tap <strong>"Password"</strong> and set a new one you haven't used before. If you see an option called <strong>"2-Step Verification"</strong> and it isn't already turned on, turning it on adds a second, easy lock — it'll text a code to your phone whenever anyone tries to sign in.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🔑</div>
+      <div class="step-content">
+        <div class="step-title">Peek at 1Password's device list</div>
+        <div class="step-desc">
+          On your phone, open a browser and go to <code>1password.com</code>, then sign in. Look for a <strong>"Security"</strong> or <strong>"Active Sessions"</strong> section — it shows which devices are signed into your account. Same as before: anything unfamiliar, sign it out; if it all looks like your own devices, you're done here.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-icon">🏦</div>
+      <div class="step-content">
+        <div class="step-title">Optional: a glance at your bank app</div>
+        <div class="step-desc">
+          If anything in your earlier screenshots looked bank-related, it's worth opening your banking app on your phone and skimming your recent activity. Only if something looks unfamiliar is there anything to act on — otherwise, just a quick look and move on.
         </div>
       </div>
     </div>
@@ -253,6 +316,10 @@
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Checked my email's Trash/Deleted folder on my phone</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Checked my email's Sent folder on my phone</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Sent my screenshots to Ari</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Signed out of other devices on my email account</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Changed my email password</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Checked 1Password's device list</label>
+      <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Glanced at my bank app (if needed)</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Downloaded and ran the Cleanup Tool</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Ran Malwarebytes and restarted</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Ran AdwCleaner</label>
