@@ -279,6 +279,10 @@
     <strong>This machine must be treated as compromised</strong> until you can physically wipe it. No banking. No 1Password vault. No saved passwords. See the Burner Rules at the bottom of this guide.
   </div>
 
+  <div class="warning-box" style="border-color: rgba(16,185,129,.3); border-left-color: var(--accent2); background: rgba(16,185,129,.06);">
+    <strong style="color: var(--accent2);">How this guide relates to her guide:</strong> she runs her own self-serve guide first (evidence gathering, lock-the-doors, the cleanup tool, both scans, Chrome reinstall + bookmarks + extensions review) — she doesn't need you for any of that. Phases A, C, and D below are marked <strong>"Already done by her"</strong> where they duplicate her guide; skip those unless something went wrong for her and you're finishing it by hand. <strong>Phase B is the real reason this guide exists</strong> — the Google account audit she can't do herself — and it's what actually gates whether it's safe to let her turn Chrome sync back on.
+  </div>
+
   <!-- PROGRESS -->
   <div class="progress-label" id="progress-label">Progress — 0 of 16 steps complete</div>
   <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
@@ -288,7 +292,7 @@
     <div class="phase-header">
       <div class="phase-num auto">A</div>
       <div class="phase-title">Run the PowerShell Script (You do this, remotely)</div>
-      <span class="phase-tag tag-auto">Automated</span>
+      <span class="phase-tag tag-auto">Already done by her — skip unless it failed</span>
     </div>
 
     <div class="step">
@@ -388,7 +392,7 @@
     <div class="phase-header">
       <div class="phase-num manual">C</div>
       <div class="phase-title">Manual scans on her machine (you walk her through, or do via remote)</div>
-      <span class="phase-tag tag-manual">Manual — remote</span>
+      <span class="phase-tag tag-manual">Mostly already done by her</span>
     </div>
 
     <div class="step">
@@ -396,6 +400,7 @@
       <div class="step-content">
         <div class="step-title">Malwarebytes — quarantine all 45 items</div>
         <div class="step-desc">
+          <em>Already done by her (her guide's Step 2) — only redo this if she flagged that it didn't work.</em><br><br>
           Open Malwarebytes. Make sure all detected items are checked. Click <strong>Quarantine</strong>. When prompted to restart, click <strong>Yes</strong>.<br>
           <em>Note: Restarting will briefly drop your remote session. Reconnect after ~2 minutes.</em>
         </div>
@@ -407,7 +412,9 @@
       <div class="step-content">
         <div class="step-title">Run AdwCleaner (already downloaded to her Desktop\CleanupTools)</div>
         <div class="step-desc">
+          <em>Already done by her — skip unless she reported it wasn't there or the scan didn't complete.</em><br><br>
           Double-click <code>AdwCleaner.exe</code>. Click <strong>Scan Now</strong>. When complete, click <strong>Quarantine</strong> on everything found. Specifically targets browser policy hijackers like OneLaunch and Adware.Elex that Malwarebytes may have missed.
+          <div class="screenshot-note">Not on her Desktop\CleanupTools? The automatic download failed — grab it yourself from malwarebytes.com/adwcleaner.</div>
         </div>
       </div>
     </div>
@@ -417,7 +424,9 @@
       <div class="step-content">
         <div class="step-title">Run HitmanPro (already downloaded to her Desktop\CleanupTools)</div>
         <div class="step-desc">
+          <em>Already done by her — skip unless she reported it wasn't there or the scan didn't complete.</em><br><br>
           Double-click <code>HitmanPro.exe</code>. Choose <strong>No, I only want to perform a one-time scan</strong>. Let it run — it uses cloud engines (Sophos, Kaspersky, Bitdefender) to catch rootkits that local scanners miss. Quarantine anything found. Free trial is fine.
+          <div class="screenshot-note">Not on her Desktop\CleanupTools? The automatic download failed — grab it yourself from hitmanpro.com.</div>
         </div>
       </div>
     </div>
@@ -427,6 +436,7 @@
       <div class="step-content">
         <div class="step-title">Check Task Manager startup list manually</div>
         <div class="step-desc">
+          <em>This is the one genuinely extra step in this phase — her guide doesn't do a visual startup review.</em><br><br>
           Press <code>Ctrl + Shift + Esc</code> → <strong>Startup apps</strong> tab. The PowerShell script removed known bad entries by name, but scroll through visually. Disable anything you don't recognize — especially items with no publisher, blank icons, or suspicious paths like <code>AppData\Local\Temp</code>.
         </div>
       </div>
@@ -438,7 +448,7 @@
     <div class="phase-header">
       <div class="phase-num auto">D</div>
       <div class="phase-title">Reinstall Chrome, restore bookmarks + safe extensions</div>
-      <span class="phase-tag tag-auto">Quick steps</span>
+      <span class="phase-tag tag-auto">Mostly already done by her</span>
     </div>
 
     <div class="step">
@@ -446,6 +456,7 @@
       <div class="step-content">
         <div class="step-title">Download and reinstall Chrome using Edge</div>
         <div class="step-desc">
+          <em>She does this herself (her guide's Step 3) — she's told to skip signing in with sync until you give the go-ahead. This step is here in case you're doing the reinstall for her instead.</em><br><br>
           Open Microsoft Edge on her machine. Navigate to:
           <div class="code-block">https://www.google.com/chrome/</div>
           <button class="copy-btn" onclick="copyText('https://www.google.com/chrome/')">Copy</button>
@@ -459,9 +470,11 @@
       <div class="step-content">
         <div class="step-title">Import her bookmarks back into new Chrome</div>
         <div class="step-desc">
+          <em>Already done by her — skip unless she reported the backup file was missing.</em><br><br>
           The script saved <code>bookmarks_backup.html</code> to her Desktop\CleanupTools folder before wiping Chrome. To restore them:<br><br>
           In the new Chrome → press <code>Ctrl+Shift+O</code> to open Bookmarks → click the <strong>⋮ three-dot menu</strong> → <strong>Import bookmarks</strong> → navigate to <code>Desktop\CleanupTools\bookmarks_backup.html</code> and open it.<br><br>
           Her bookmarks will appear in a new "Imported" folder in the bookmarks bar.
+          <div class="screenshot-note">File not there? The backup only runs if Chrome's bookmarks were in the default profile path. Check whether she had a non-default profile before assuming the bookmarks are unrecoverable.</div>
         </div>
       </div>
     </div>
@@ -471,6 +484,7 @@
       <div class="step-content">
         <div class="step-title">Review extensions_report.html before reinstalling anything</div>
         <div class="step-desc">
+          <em>Already done by her — skip unless she flagged something in the "Check before reinstalling" list for you to review, which is really what this step is for.</em><br><br>
           Open <code>Desktop\CleanupTools\extensions_report.html</code> in Edge. The script read every extension from her infected profile and tagged each one:<br><br>
           <strong style="color:#10b981">Known safe</strong> — these can be reinstalled from the Chrome Web Store without concern.<br>
           <strong style="color:#f59e0b">Review before reinstalling</strong> — click the ID link to open its Web Store page. Check the name matches, verify the developer, and check reviews. If anything looks off, skip it.<br>
@@ -485,6 +499,7 @@
       <div class="step-content">
         <div class="step-title">Install uBlock Origin Lite first (before anything else)</div>
         <div class="step-desc">
+          <em>Not covered by her guide — worth confirming this got installed, or doing it yourself.</em><br><br>
           In the new Chrome, go to:
           <div class="code-block">https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh</div>
           <button class="copy-btn" onclick="copyText('https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh')">Copy</button>
@@ -497,6 +512,7 @@
   <!-- PROGRESS CHECKLIST -->
   <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:22px 24px; margin-bottom:28px;">
     <div style="font-weight:600; margin-bottom:14px;">✅ Track your progress</div>
+    <div style="font-size:13px; color: var(--muted); margin-bottom:14px;">Most of the first and third groups below are things she already checked off in her own guide — this list just lets you confirm nothing slipped through.</div>
     <div class="checklist" id="checklist">
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Ran the PowerShell script as Admin</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Confirmed bookmarks_backup.html was created</label>
