@@ -7,49 +7,50 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
   :root {
-    --bg: #eeeeff; --surface: #d7dff5; --border: #252b3b;
-    --accent: #3b82f6; --accent2: #10b981; --warn: #f59e0b; --danger: #ef4444;
-    --text: #e2e8f0; --muted: #64748b; --code-bg: #0d1117;
+    --bg: #eef1fb; --surface: #ffffff; --surface-tint: #e7edfa; --border: #dbe3f3;
+    --accent: #4d7cdb; --accent2: #219a72; --warn: #c98a2c; --danger: #d6584f;
+    --evidence: #8b6bd8;
+    --text: #33405c; --muted: #5c6788; --code-bg: #eef1f8; --code-text: #2f5aa8;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif; font-weight: 300; line-height: 1.7; padding: 40px 20px 80px; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif; font-weight: 400; line-height: 1.7; padding: 40px 20px 80px; }
   .container { max-width: 820px; margin: 0 auto; }
   header { border-bottom: 1px solid var(--border); padding-bottom: 28px; margin-bottom: 36px; }
-  h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 10px; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 10px; color: var(--text); }
   .subtitle { color: var(--muted); font-size: 14px; }
-  .warning-box { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.3); border-left: 3px solid var(--danger); border-radius: 6px; padding: 16px 18px; margin-bottom: 36px; font-size: 14px; }
+  .warning-box { background: rgba(214,88,79,.08); border: 1px solid rgba(214,88,79,.25); border-left: 3px solid var(--danger); border-radius: 6px; padding: 16px 18px; margin-bottom: 36px; font-size: 14px; color: var(--text); }
   .warning-box strong { color: var(--danger); }
   .phase { margin-bottom: 44px; }
   .phase-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
   .phase-num { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; flex-shrink: 0; }
-  .phase-num.auto { background: rgba(59,130,246,.15); color: var(--accent); border: 1px solid rgba(59,130,246,.3); }
-  .phase-num.manual { background: rgba(245,158,11,.12); color: var(--warn); border: 1px solid rgba(245,158,11,.3); }
-  .phase-num.evidence { background: rgba(168,85,247,.14); color: #c084fc; border: 1px solid rgba(168,85,247,.35); }
-  .phase-title { font-size: 17px; font-weight: 600; }
+  .phase-num.auto { background: rgba(77,124,219,.14); color: var(--accent); border: 1px solid rgba(77,124,219,.3); }
+  .phase-num.manual { background: rgba(201,138,44,.14); color: var(--warn); border: 1px solid rgba(201,138,44,.3); }
+  .phase-num.evidence { background: rgba(139,107,216,.14); color: var(--evidence); border: 1px solid rgba(139,107,216,.3); }
+  .phase-title { font-size: 17px; font-weight: 600; color: var(--text); }
   .phase-tag { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; padding: 2px 8px; border-radius: 3px; margin-left: auto; }
-  .tag-auto { background: rgba(59,130,246,.15); color: var(--accent); }
-  .tag-manual { background: rgba(245,158,11,.12); color: var(--warn); }
-  .tag-evidence { background: rgba(168,85,247,.14); color: #c084fc; }
-  .step { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; margin-bottom: 10px; display: flex; gap: 16px; }
+  .tag-auto { background: rgba(77,124,219,.14); color: var(--accent); }
+  .tag-manual { background: rgba(201,138,44,.14); color: var(--warn); }
+  .tag-evidence { background: rgba(139,107,216,.14); color: var(--evidence); }
+  .step { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; margin-bottom: 10px; display: flex; gap: 16px; box-shadow: 0 1px 2px rgba(51,64,92,.05); }
   .step-icon { font-size: 18px; flex-shrink: 0; margin-top: 2px; }
   .step-content { flex: 1; }
-  .step-title { font-weight: 600; font-size: 15px; margin-bottom: 5px; }
-  .step-desc { color: #94a3b8; font-size: 14px; }
-  code { font-family: 'IBM Plex Mono', monospace; font-size: 12px; background: var(--code-bg); border: 1px solid var(--border); padding: 2px 7px; border-radius: 4px; color: #93c5fd; }
-  .download-btn { display: inline-block; margin-top: 12px; background: var(--accent); color: white; border: none; border-radius: 8px; padding: 14px 26px; font-size: 15px; font-weight: 600; text-decoration: none; }
-  .download-btn:hover { background: #2563eb; }
-  .burner-rules { background: rgba(239,68,68,.06); border: 1px solid rgba(239,68,68,.25); border-radius: 8px; padding: 22px 24px; margin-top: 36px; }
+  .step-title { font-weight: 600; font-size: 15px; margin-bottom: 5px; color: var(--text); }
+  .step-desc { color: var(--muted); font-size: 14px; }
+  code { font-family: 'IBM Plex Mono', monospace; font-size: 12px; background: var(--code-bg); border: 1px solid var(--border); padding: 2px 7px; border-radius: 4px; color: var(--code-text); }
+  .download-btn { display: inline-block; margin-top: 12px; background: var(--accent); color: #ffffff; border: none; border-radius: 8px; padding: 14px 26px; font-size: 15px; font-weight: 600; text-decoration: none; }
+  .download-btn:hover { background: #3c67c2; }
+  .burner-rules { background: rgba(214,88,79,.06); border: 1px solid rgba(214,88,79,.22); border-radius: 8px; padding: 22px 24px; margin-top: 36px; }
   .burner-rules h3 { color: var(--danger); font-size: 15px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 14px; font-family: 'IBM Plex Mono', monospace; }
-  .rule { display: flex; gap: 10px; margin-bottom: 8px; font-size: 14px; }
+  .rule { display: flex; gap: 10px; margin-bottom: 8px; font-size: 14px; color: var(--text); }
   .rule-icon { color: var(--danger); flex-shrink: 0; }
   .checklist { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-  .check-item { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: #94a3b8; cursor: pointer; }
+  .check-item { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: var(--text); cursor: pointer; }
   .check-item input[type=checkbox] { margin-top: 3px; accent-color: var(--accent2); width: 15px; height: 15px; flex-shrink: 0; }
   .check-item.done { text-decoration: line-through; color: var(--muted); }
   .progress-bar-wrap { background: var(--border); border-radius: 99px; height: 6px; margin-bottom: 32px; overflow: hidden; }
   .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; transition: width .4s ease; width: 0%; }
   .progress-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
-  .screenshot-note { background: var(--code-bg); border: 1px dashed var(--border); border-radius: 6px; padding: 10px 14px; margin-top: 10px; font-size: 13px; color: var(--muted); font-style: italic; }
+  .screenshot-note { background: var(--surface-tint); border: 1px dashed var(--border); border-radius: 6px; padding: 10px 14px; margin-top: 10px; font-size: 13px; color: var(--muted); font-style: italic; }
 </style>
 </head>
 <body>
@@ -239,8 +240,8 @@
   </div>
 
   <!-- CHECKLIST -->
-  <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:22px 24px; margin-bottom:28px;">
-    <div style="font-weight:600; margin-bottom:14px;">✅ Check off as you go</div>
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:22px 24px; margin-bottom:28px; box-shadow:0 1px 2px rgba(51,64,92,.05);">
+    <div style="font-weight:600; margin-bottom:14px; color:var(--text);">✅ Check off as you go</div>
     <div class="checklist" id="checklist">
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Checked 1Password on my phone for logins I don't recognize</label>
       <label class="check-item"><input type="checkbox" onchange="updateProgress()"> Checked my email's Trash/Deleted folder on my phone</label>
@@ -262,7 +263,7 @@
     <div class="rule"><span class="rule-icon">✗</span> <span>No banking or Zelle</span></div>
     <div class="rule"><span class="rule-icon">✗</span> <span>No 1Password</span></div>
     <div class="rule"><span class="rule-icon">✗</span> <span>No typing passwords for important accounts</span></div>
-    <div class="rule"><span class="rule-icon">✓</span> <span style="color:#94a3b8">Streaming and news sites are fine</span></div>
+    <div class="rule"><span class="rule-icon" style="color:var(--accent2)">✓</span> <span style="color:var(--muted)">Streaming and news sites are fine</span></div>
   </div>
 
 </div>
