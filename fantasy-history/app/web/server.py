@@ -38,6 +38,37 @@ RATE_STAT_DISPLAY_NAMES = {"era", "whip", "obp", "avg", "ba", "slg", "ops", "fip
 def _is_rate_stat(display_name: str | None, name: str | None) -> bool:
     return (display_name or "").strip().lower() in RATE_STAT_DISPLAY_NAMES
 
+
+def _parse_stat_value(raw: str | None) -> float | None:
+    """Converts a scraped stat's raw display text to a float, or None if
+    it isn't numeric at all.
+
+    CONFIRMED REAL BUG this fixes: every float(row["value"]) call in this
+    file used to run directly against the raw scraped text, silently
+    dropping (via a bare try/except ValueError) any team whose value
+    didn't parse -- with no visible error anywhere, this made whole
+    categories look "missing" most or all of their teams on the
+    dashboard even though the underlying scrape/DB data was complete.
+    Two decorations Yahoo adds to otherwise-plain numbers caused this:
+      - thousand-separator commas on counting stats >= 1000 (e.g.
+        "1,743" for a full-roster season strikeout total)
+      - a trailing "*" Yahoo appends to a rate stat (WHIP, OBP, ...) for
+        a team that hasn't met its innings/at-bat qualifying minimum yet
+        (e.g. "1.16*", ".329*") -- the number itself is still real, just
+        flagged; stripped here since every caller wants the number, not
+        the flag.
+    """
+    if raw is None:
+        return None
+    cleaned = str(raw).replace(",", "").rstrip("*").strip()
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
 _pull_lock = threading.Lock()
 _pull_running = False
 
@@ -335,9 +366,8 @@ def create_app() -> Flask:
             ).fetchall()
             values: dict[str, dict[int, float]] = {}
             for r in rows:
-                try:
-                    v = float(r["value"])
-                except (TypeError, ValueError):
+                v = _parse_stat_value(r["value"])
+                if v is None:
                     continue
                 values.setdefault(r["team_key"], {})[r["stat_id"]] = v
             return values
@@ -454,9 +484,8 @@ def create_app() -> Flask:
             )
             for r in rows:
                 entry = teams.setdefault(r["team_key"], {"name": r["name"], "points": []})
-                try:
-                    value = float(r["value"])
-                except (TypeError, ValueError):
+                value = _parse_stat_value(r["value"])
+                if value is None:
                     continue
                 entry["points"].append({"date": r["snapshot_date"], "value": value})
         else:
@@ -475,9 +504,8 @@ def create_app() -> Flask:
             running_totals: dict[str, float] = {}
             for r in rows:
                 entry = teams.setdefault(r["team_key"], {"name": r["name"], "points": []})
-                try:
-                    delta = float(r["value"])
-                except (TypeError, ValueError):
+                delta = _parse_stat_value(r["value"])
+                if delta is None:
                     continue
                 running_totals[r["team_key"]] = running_totals.get(r["team_key"], 0.0) + delta
                 entry["points"].append({"date": r["snapshot_date"], "value": running_totals[r["team_key"]]})
