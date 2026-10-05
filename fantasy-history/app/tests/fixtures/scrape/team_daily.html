@@ -1,0 +1,135 @@
+<!-- Hand-crafted minimal fixture mirroring the confirmed real structure of
+     baseball.fantasysports.yahoo.com/b1/{league_id}/{team_id}/team?date=YYYY-MM-DD
+     (NOT a raw copy of the real saved page -- see parse_team_daily_totals's
+     docstring). Includes a bench player (excluded from the totals row,
+     matching real Yahoo behavior) to confirm the totals row is a genuine
+     sum of active starters only, not every roster row. -->
+<table id="statTable0">
+  <tr>
+    <td colspan="6"></td>
+    <td>Rank</td>
+    <td>Fantasy</td>
+    <td colspan="7">Batting</td>
+  </tr>
+  <tr>
+    <th>Pos</th>
+    <th>Batters</th>
+    <th>Opp</th>
+    <th>Pre-Season</th>
+    <th>% Start</th>
+    <th>% Ros</th>
+    <th>H/AB*</th>
+    <th>R</th>
+    <th>HR</th>
+    <th>RBI</th>
+    <th>SB</th>
+    <th>K</th>
+    <th>OBP</th>
+    <th></th>
+  </tr>
+  <tr>
+    <td>C</td>
+    <td>Some Catcher</td>
+    <td>NYY</td>
+    <td>100</td>
+    <td>50%</td>
+    <td>60%</td>
+    <td>1/3</td>
+    <td>1</td>
+    <td>0</td>
+    <td>1</td>
+    <td>0</td>
+    <td>1</td>
+    <td>.333</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>BN</td>
+    <td>Bench Guy (should not count)</td>
+    <td>BOS</td>
+    <td>50</td>
+    <td>5%</td>
+    <td>10%</td>
+    <td>3/4</td>
+    <td>3</td>
+    <td>2</td>
+    <td>5</td>
+    <td>1</td>
+    <td>0</td>
+    <td>.750</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>Starting Lineup Total(s)</td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td>1/3</td>
+    <td>1</td>
+    <td>0</td>
+    <td>1</td>
+    <td>0</td>
+    <td>1</td>
+    <td>.333</td>
+    <td></td>
+  </tr>
+</table>
+
+<table id="statTable1">
+  <tr>
+    <td colspan="6"></td>
+    <td>Rank</td>
+    <td>Fantasy</td>
+    <td colspan="7">Pitching</td>
+  </tr>
+  <tr>
+    <th>Pos</th>
+    <th>Pitchers</th>
+    <th>Opp</th>
+    <th>Pre-Season</th>
+    <th>% Start</th>
+    <th>% Ros</th>
+    <th>IP*</th>
+    <th>W</th>
+    <th>SV</th>
+    <th>K</th>
+    <th>HLD</th>
+    <th>ERA</th>
+    <th>WHIP</th>
+    <th></th>
+  </tr>
+  <tr>
+    <td>SP</td>
+    <td>Some Starter</td>
+    <td>@ BOS</td>
+    <td>200</td>
+    <td>90%</td>
+    <td>95%</td>
+    <td>6.0</td>
+    <td>1</td>
+    <td>0</td>
+    <td>7</td>
+    <td>0</td>
+    <td>2.00</td>
+    <td>1.10</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>Starting Lineup Total(s)</td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td>6.0</td>
+    <td>1</td>
+    <td>0</td>
+    <td>7</td>
+    <td>0</td>
+    <td>2.00</td>
+    <td>1.10</td>
+    <td></td>
+  </tr>
+</table>

@@ -1,0 +1,15 @@
+<!-- Hand-crafted minimal fixture mirroring the confirmed real structure of
+     baseball.fantasysports.yahoo.com/b1/{league_id} -- the season
+     walk-back <select name="seasonspec"> inside a form posting to
+     .../gotoseason. Real page has options back to 2001; trimmed to a
+     handful here since app/scrape/season_nav.py only needs to prove it
+     can extract the slug/options/form action. -->
+<form action="https://baseball.fantasysports.yahoo.com/b1/74647/gotoseason" method="post">
+  <select name="seasonspec" id="seasonspec">
+    <option value="2026_kippahs">2026 Season</option>
+    <option value="2025_kippahs">2025 Season</option>
+    <option value="2024_kippahs">2024 Season</option>
+    <option value="2001_kippahs">2001 Season</option>
+  </select>
+  <input type="submit" value="submit">
+</form>

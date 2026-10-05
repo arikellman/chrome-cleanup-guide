@@ -1,0 +1,9 @@
+{
+  "stat_categories": {
+    "stats": {
+      "0": {"stat": {"stat_id": "7", "name": "Runs", "display_name": "R", "sort_order": "1", "is_only_display_stat": "0", "position_type": "B"}},
+      "1": {"stat": {"stat_id": "12", "name": "Home Runs", "display_name": "HR", "sort_order": "1", "is_only_display_stat": "0", "position_type": "B"}},
+      "count": 2
+    }
+  }
+}
