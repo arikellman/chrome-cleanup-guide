@@ -30,16 +30,31 @@ _LOWER_IS_BETTER = {("ERA", "P"), ("WHIP", "P"), ("K", "B")}
 # adds to disambiguate a second column literally named e.g. "K".
 _TRAILING_DUP_SUFFIX_RE = re.compile(r"_\d+$")
 
+# Columns CONFIRMED REAL to appear on Yahoo's "Overall Stats" page with NO
+# trailing "*" marker (so the asterisk check below can't catch them) but
+# that are still purely informational -- Yahoo's own live "Overall
+# Points" table never scores on them at all. "Total GP" specifically was
+# found live being double-counted as a full extra scored category,
+# inflating every team's roto point total by exactly that team's "Total
+# GP" rank-points (confirmed by diffing our dashboard's totals against
+# Yahoo's real ones -- the difference matched the "Total GP" column's
+# points exactly, for every team).
+ALWAYS_DISPLAY_ONLY_NAMES = {"GP", "Total GP"}
+
 
 def normalize_stat_column(col_key: str) -> tuple[str, bool]:
     """"K_2" -> ("K", False). "GP *" (Yahoo's own display-only marker) ->
-    ("GP", True). Kept here (in addition to being re-exported from
-    app.scrape.parse) since it's identity-resolution logic, not parsing --
-    it decides what `display_name` means to resolve_stat_id below."""
+    ("GP", True). "Total GP" -> ("Total GP", True) even with no "*" (see
+    ALWAYS_DISPLAY_ONLY_NAMES). Kept here (in addition to being
+    re-exported from app.scrape.parse) since it's identity-resolution
+    logic, not parsing -- it decides what `display_name` means to
+    resolve_stat_id below."""
     name = _TRAILING_DUP_SUFFIX_RE.sub("", col_key).strip()
     is_display_only = name.endswith("*")
     if is_display_only:
         name = name[:-1].strip()
+    if name in ALWAYS_DISPLAY_ONLY_NAMES:
+        is_display_only = True
     return name, is_display_only
 
 

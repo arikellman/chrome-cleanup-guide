@@ -498,6 +498,37 @@ def backfill_transaction_timestamps(conn) -> dict[str, Any]:
     return {"checked": len(rows), "fixed": fixed, "still_unparseable": still_unparseable}
 
 
+def backfill_display_only_categories(conn) -> dict[str, Any]:
+    """One-time repair for stat_categories rows written before
+    identity.normalize_stat_column treated "GP"/"Total GP" as always
+    display-only regardless of a trailing "*" (see
+    identity.ALWAYS_DISPLAY_ONLY_NAMES).
+
+    CONFIRMED REAL BUG this fixes: Yahoo's "Overall Stats" page shows a
+    "Total GP" column with no "*", so it was being stored as a real
+    scored category (is_display_only=0) and double-counted into every
+    team's roto point total -- confirmed live by diffing a dashboard
+    pull against Yahoo's own "Overall Points" page: every team's total
+    was off from Yahoo's real total by exactly that team's "Total GP"
+    category points, and only that much.
+
+    Without this, an already-created "Total GP" stat_categories row
+    stays wrongly scored forever even after the code fix above, since
+    resolve_stat_id's existing-row lookup matches on (season_year,
+    display_name, position_type) only and doesn't touch is_display_only
+    on a hit -- so this needs its own repair pass. Fully offline: no
+    re-scraping, no network calls.
+    """
+    cur = conn.execute(
+        "UPDATE stat_categories SET is_display_only = 1 "
+        "WHERE display_name IN (%s) AND is_display_only != 1"
+        % ", ".join("?" for _ in identity.ALWAYS_DISPLAY_ONLY_NAMES),
+        tuple(identity.ALWAYS_DISPLAY_ONLY_NAMES),
+    )
+    conn.commit()
+    return {"fixed": cur.rowcount}
+
+
 # ---------------------------------------------------------------------
 # Team page, single-day totals ("date hack" retroactive daily stats)
 # ---------------------------------------------------------------------

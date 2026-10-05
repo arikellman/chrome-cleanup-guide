@@ -358,6 +358,16 @@ class TestIdentity(unittest.TestCase):
         self.assertEqual(identity.normalize_stat_column("K_2"), ("K", False))
         self.assertEqual(identity.normalize_stat_column("HR"), ("HR", False))
 
+    def test_normalize_stat_column_always_display_only_names(self):
+        # Confirmed real: Yahoo's "Overall Stats" page renders "Total GP"
+        # with no trailing "*" at all, yet it's never a scored category on
+        # Yahoo's own "Overall Points" page -- diffing a live dashboard
+        # pull against Yahoo's real standings showed every team's total
+        # off by exactly that team's "Total GP" category points. "GP"
+        # (with or without "*") is the same informational column.
+        self.assertEqual(identity.normalize_stat_column("Total GP"), ("Total GP", True))
+        self.assertEqual(identity.normalize_stat_column("GP"), ("GP", True))
+
     def test_resolve_team_key_reuses_existing_api_era_row(self):
         database.upsert_teams(
             self.conn,
@@ -710,6 +720,83 @@ class TestBackfillTransactionTimestamps(unittest.TestCase):
         jobs.ingest_transactions_html(self.conn, load("transactions.html"), 2026, "74647")
         result = jobs.backfill_transaction_timestamps(self.conn)
         self.assertEqual(result, {"checked": 0, "fixed": 0, "still_unparseable": 0})
+
+
+class TestBackfillDisplayOnlyCategories(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_fixes_legacy_total_gp_row_written_before_the_fix(self):
+        # Simulates a real pre-fix row: "Total GP" was resolved before
+        # identity.normalize_stat_column treated it as always
+        # display-only, so it was stored with is_display_only=0 and
+        # double-counted into roto point totals.
+        database.upsert_stat_categories(
+            self.conn,
+            [
+                {
+                    "season_year": 2026,
+                    "stat_id": 9001,
+                    "name": "Total GP",
+                    "display_name": "Total GP",
+                    "sort_order": 1,
+                    "display_order": 15,
+                    "is_display_only": 0,
+                    "position_type": "B",
+                }
+            ],
+        )
+        result = jobs.backfill_display_only_categories(self.conn)
+        self.assertEqual(result, {"fixed": 1})
+        row = self.conn.execute(
+            "SELECT is_display_only FROM stat_categories WHERE stat_id = 9001"
+        ).fetchone()
+        self.assertEqual(row["is_display_only"], 1)
+
+    def test_leaves_already_fixed_rows_alone(self):
+        database.upsert_stat_categories(
+            self.conn,
+            [
+                {
+                    "season_year": 2026,
+                    "stat_id": 9001,
+                    "name": "Total GP",
+                    "display_name": "Total GP",
+                    "sort_order": 1,
+                    "display_order": 15,
+                    "is_display_only": 1,
+                    "position_type": "B",
+                }
+            ],
+        )
+        result = jobs.backfill_display_only_categories(self.conn)
+        self.assertEqual(result, {"fixed": 0})
+
+    def test_does_not_touch_real_scored_categories(self):
+        database.upsert_stat_categories(
+            self.conn,
+            [
+                {
+                    "season_year": 2026,
+                    "stat_id": 7,
+                    "name": "Runs",
+                    "display_name": "R",
+                    "sort_order": 1,
+                    "display_order": 1,
+                    "is_display_only": 0,
+                    "position_type": "B",
+                }
+            ],
+        )
+        result = jobs.backfill_display_only_categories(self.conn)
+        self.assertEqual(result, {"fixed": 0})
+        row = self.conn.execute("SELECT is_display_only FROM stat_categories WHERE stat_id = 7").fetchone()
+        self.assertEqual(row["is_display_only"], 0)
 
     def test_row_with_no_raw_json_counted_as_still_unparseable(self):
         self.conn.execute(

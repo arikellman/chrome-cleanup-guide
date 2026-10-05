@@ -1,4 +1,4 @@
-"""CLI entry point: python -m app <auth|pull|backfill|scrape-auth|scrape-season|scrape-daily-stats|fix-transaction-timestamps|scrape-roster-snapshot|keeper-eligibility|serve|status>"""
+"""CLI entry point: python -m app <auth|pull|backfill|scrape-auth|scrape-season|scrape-daily-stats|fix-transaction-timestamps|fix-display-only-categories|scrape-roster-snapshot|keeper-eligibility|serve|status>"""
 from __future__ import annotations
 
 import argparse
@@ -407,6 +407,27 @@ def cmd_fix_transaction_timestamps(_args: argparse.Namespace) -> None:
         conn.close()
 
 
+def cmd_fix_display_only_categories(_args: argparse.Namespace) -> None:
+    """One-time, fully offline repair for stat_categories rows written
+    before identity.normalize_stat_column treated "GP"/"Total GP" as
+    always display-only (see app/scrape/identity.py's
+    ALWAYS_DISPLAY_ONLY_NAMES docstring) -- without this, an
+    already-created "Total GP" row stays wrongly scored into every
+    team's roto point total forever, even after the code fix, since
+    resolve_stat_id's existing-row lookup reuses it by (season_year,
+    display_name, position_type) without touching is_display_only. No
+    re-scraping needed.
+    """
+    from app.scrape import jobs as scrape_jobs
+
+    conn = database.get_connection()
+    try:
+        result = scrape_jobs.backfill_display_only_categories(conn)
+        print(result)
+    finally:
+        conn.close()
+
+
 def cmd_scrape_roster_snapshot(args: argparse.Namespace) -> None:
     """Captures a league-wide roster snapshot (which players are on
     which manager's roster) for one date, default today -- see
@@ -755,6 +776,12 @@ def main() -> None:
         help="One-time offline repair: recompute timestamp for transactions scraped before that fix, from raw_json already on file",
     )
     p_fix_tx_ts.set_defaults(func=cmd_fix_transaction_timestamps)
+
+    p_fix_display_only = sub.add_parser(
+        "fix-display-only-categories",
+        help='One-time offline repair: mark "GP"/"Total GP" stat_categories rows as display-only so they stop being double-counted into roto point totals',
+    )
+    p_fix_display_only.set_defaults(func=cmd_fix_display_only_categories)
 
     p_roster_snap = sub.add_parser(
         "scrape-roster-snapshot",
