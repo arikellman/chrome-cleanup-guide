@@ -433,6 +433,38 @@ def parse_team_daily_totals(html: str) -> dict[str, dict[str, str]]:
     return result
 
 
+def parse_team_roster_players(html: str) -> list[dict[str, Any]]:
+    """Every player on a team page's batter/pitcher tables (#statTable0 /
+    #statTable1, every slot including bench/IL/NA), as
+    [{"player_yahoo_id", "player_name"}]. A row's player is its first link
+    to sports.yahoo.com/mlb/players/{id} -- PLAYER_LINK_RE is anchored at
+    the id, so the sibling ".../{id}/news" Player Note link never matches.
+    Empty slots and the "Starting Lineup Total(s)" row have no such link
+    and are skipped.
+
+    UNVERIFIED against a real saved team page's player cells: assumes the
+    same player-name link markup confirmed on the "All Taken Players" page.
+    The per-team counts scrape_roster_snapshot reports are the check.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    players = []
+    seen = set()
+    for table_id in ("statTable0", "statTable1"):
+        table = soup.find(id=table_id)
+        if table is None:
+            continue
+        for r in table.find_all("tr"):
+            link = r.find("a", href=PLAYER_LINK_RE)
+            if link is None:
+                continue
+            player_id = PLAYER_LINK_RE.search(link["href"]).group(1)
+            if player_id in seen:
+                continue
+            seen.add(player_id)
+            players.append({"player_yahoo_id": player_id, "player_name": link.get_text(" ", strip=True)})
+    return players
+
+
 # ---------------------------------------------------------------------
 # League-wide "Player List" page, filtered to All Taken Players
 # (.../players?status=T&pos={B|P}&stat1=S_S_{year}) -- gives every

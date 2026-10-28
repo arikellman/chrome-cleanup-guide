@@ -443,7 +443,9 @@ def cmd_scrape_roster_snapshot(args: argparse.Namespace) -> None:
     conn = database.get_connection()
     try:
         result = scrape_jobs.scrape_roster_snapshot(conn, season_year, league_id, snapshot_date=args.date)
-        print(result)
+        print(f"Roster snapshot for {result['snapshot_date']}: {result['players']} players")
+        for team, n in result["per_team"].items():
+            print(f"  {team:<32} {n}")
     finally:
         conn.close()
 

@@ -200,6 +200,48 @@ class TestParseTeamDailyTotals(unittest.TestCase):
             self.assertNotIn(col, self.parsed["batting"])
 
 
+class TestParseTeamRosterPlayers(unittest.TestCase):
+    def test_every_roster_slot_including_bench_and_pitchers(self):
+        players = parse.parse_team_roster_players(load("team_daily.html"))
+        self.assertEqual(
+            players,
+            [
+                {"player_yahoo_id": "1001", "player_name": "Some Catcher"},
+                {"player_yahoo_id": "1002", "player_name": "Bench Guy (should not count)"},
+                {"player_yahoo_id": "2001", "player_name": "Some Starter"},
+            ],
+        )
+
+
+class TestScrapeRosterSnapshot(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        database.init_db(self.conn)
+        self.conn.execute(
+            "INSERT INTO teams (season_year, team_key, team_id, name) VALUES (2026, '469.l.74647.t.2', '2', 'Birds')"
+        )
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_fetches_team_page_for_that_date_and_replaces_prior_snapshot(self):
+        database.upsert_roster_snapshot(
+            self.conn,
+            [{"snapshot_date": "2026-09-27", "season_year": 2026, "team_key": "469.l.74647.t.2",
+              "player_key": "mlb.p.stale", "player_name": "Stale"}],
+        )
+        with unittest.mock.patch.object(jobs.browser, "fetch_page", return_value=load("team_daily.html")) as fetch:
+            result = jobs.scrape_roster_snapshot(self.conn, 2026, "74647", snapshot_date="2026-09-27")
+        self.assertIn("/74647/2/team?date=2026-09-27", fetch.call_args.args[0])
+        self.assertEqual(result, {"snapshot_date": "2026-09-27", "players": 3, "per_team": {"Birds": 3}})
+        keys = {
+            r["player_key"]
+            for r in self.conn.execute("SELECT player_key FROM roster_snapshots WHERE snapshot_date = '2026-09-27'")
+        }
+        self.assertEqual(keys, {"mlb.p.1001", "mlb.p.1002", "mlb.p.2001"})
+
+
 class TestParseTakenPlayersPage(unittest.TestCase):
     def setUp(self):
         self.players = parse.parse_taken_players_page(load("taken_players.html"))

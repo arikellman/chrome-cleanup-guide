@@ -801,20 +801,50 @@ def scrape_roster_snapshot(
     *,
     base_url: str | None = None,
 ) -> dict[str, Any]:
-    """Captures a full league-wide roster snapshot (batters + pitchers)
-    for one date (default: today) -- see roster_snapshots' schema.sql
-    comment for why: keeper eligibility typically depends on a player
-    being on the SAME manager's roster on two specific dates, which this
-    snapshot, taken twice months apart, is what makes comparable later
-    (see app/__main__.py's cmd_keeper_eligibility).
+    """Captures every team's roster AS OF `snapshot_date` (default: today)
+    by loading each team's page for that date (team_daily_url) -- so a
+    past date, e.g. the last day of the season, can be captured after the
+    fact. Keeper eligibility depends on a player being on the SAME
+    manager's roster on two specific dates (see app/keepers.py).
+
+    Replaces the earlier "All Taken Players" list approach
+    (scrape_pull_taken_players): confirmed live that after the season
+    ended, that list's "Next 25" click stopped loading further pages, so
+    a snapshot came back with only the first 25 batters + 25 pitchers.
+
+    All teams are fetched before anything is written, and any existing
+    snapshot for this date is replaced, so a partial earlier run can't
+    leave stale/incomplete rows mixed in.
     """
     snapshot_date = snapshot_date or dt.date.today().isoformat()
-    totals = {"players": 0, "skipped": 0}
-    for position in ("B", "P"):
-        result = scrape_pull_taken_players(
-            conn, season_year, league_id, position, snapshot_date, sport_path, base_url=base_url
+    teams = _rows(
+        conn.execute(
+            "SELECT team_key, team_id, name FROM teams WHERE season_year = ? ORDER BY CAST(team_id AS INTEGER)",
+            (season_year,),
         )
-        totals["players"] += result["players"]
-        totals["skipped"] += result["skipped"]
-    totals["snapshot_date"] = snapshot_date
-    return totals
+    )
+    rows = []
+    per_team = {}
+    for team in teams:
+        html = browser.fetch_page(
+            team_daily_url(team["team_id"], snapshot_date, league_id, sport_path, base_url=base_url),
+            wait_selector="#statTable0",
+        )
+        players = parse.parse_team_roster_players(html)
+        per_team[team["name"] or team["team_key"]] = len(players)
+        rows.extend(
+            {
+                "snapshot_date": snapshot_date,
+                "season_year": season_year,
+                "team_key": team["team_key"],
+                "player_key": f"mlb.p.{p['player_yahoo_id']}",
+                "player_name": p["player_name"],
+            }
+            for p in players
+        )
+    conn.execute(
+        "DELETE FROM roster_snapshots WHERE season_year = ? AND snapshot_date = ?", (season_year, snapshot_date)
+    )
+    database.upsert_roster_snapshot(conn, rows)
+    conn.commit()
+    return {"snapshot_date": snapshot_date, "players": len(rows), "per_team": per_team}
