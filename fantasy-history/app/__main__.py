@@ -504,6 +504,9 @@ def cmd_keeper_eligibility(args: argparse.Namespace) -> None:
                 )
 
         report = keepers.build_report(conn, season_year, start, end)
+        manager_names = config.get("manager_names", {})
+        for t in report:
+            t["manager"] = manager_names.get(t["team"], t["manager"])
         if args.pdf:
             from app import keeper_pdf
 
@@ -525,7 +528,8 @@ def cmd_keeper_eligibility(args: argparse.Namespace) -> None:
         for t in report:
             players = t["players"]
             n_eligible = sum(1 for p in players if p["status"] == keepers.ELIGIBLE)
-            print(f"\n{t['team']} -- {len(players)} players, {n_eligible} keeper-eligible:")
+            manager = f" ({t['manager']})" if t["manager"] else ""
+            print(f"\n{t['team']}{manager} -- {len(players)} players, {n_eligible} keeper-eligible:")
             for p in players:
                 label = p["label"]
                 if p["status"] == keepers.NOT_FROZEN:
