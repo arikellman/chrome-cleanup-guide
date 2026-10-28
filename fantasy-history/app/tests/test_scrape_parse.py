@@ -643,6 +643,37 @@ class TestIngestDraftResults(unittest.TestCase):
         self.assertEqual(rows[2]["pick"], 3)
         self.assertEqual(rows[2]["round"], 2)
 
+    def _ingest_two_way(self, pitcher_label):
+        html = f"""
+        <table><tr><td colspan="3">Round 1</td></tr>
+          <tr><td>2.</td><td><a href="https://sports.yahoo.com/mlb/players/10835">Shohei Ohtani (Batter) (LAD - Util)</a></td>
+              <td>Team Grimace (Gri-MAH-Chay)</td></tr></table>
+        <table><tr><td colspan="3">Round 4</td></tr>
+          <tr><td>1.</td><td><a href="https://sports.yahoo.com/mlb/players/10835">{pitcher_label}</a></td>
+              <td>Backcrackers</td></tr></table>
+        """
+        jobs.ingest_draft_results_html(self.conn, html, 2015, "74647")
+        return dict(
+            self.conn.execute("SELECT player_key, round FROM draft_picks WHERE season_year = 2015").fetchall()
+        )
+
+    def test_two_way_player_halves_get_separate_keys(self):
+        # Confirmed live: both Ohtani halves link to the same id; keyed by
+        # id alone, the round-4 pitcher pick overwrote the round-1 batter's.
+        expected = {"mlb.p.10835.batter": 1, "mlb.p.10835.pitcher": 4}
+        self.assertEqual(self._ingest_two_way("S. Ohtani (Pitcher) (LAD - SP)"), expected)
+
+    def test_two_way_pitcher_half_without_tag_uses_position(self):
+        expected = {"mlb.p.10835.batter": 1, "mlb.p.10835.pitcher": 4}
+        self.assertEqual(self._ingest_two_way("Shohei Ohtani (LAD - SP)"), expected)
+
+
+class TestPlayerKey(unittest.TestCase):
+    def test_keys(self):
+        self.assertEqual(identity.player_key("9877", "Aaron Judge"), "mlb.p.9877")
+        self.assertEqual(identity.player_key("10835", "Shohei Ohtani (Batter)"), "mlb.p.10835.batter")
+        self.assertEqual(identity.player_key("10835", "S. Ohtani (Pitcher)"), "mlb.p.10835.pitcher")
+
 
 class TestParseTransactionTimestamp(unittest.TestCase):
     def test_parses_month_day_time_with_season_year(self):

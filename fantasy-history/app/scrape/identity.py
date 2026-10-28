@@ -58,6 +58,22 @@ def normalize_stat_column(col_key: str) -> tuple[str, bool]:
     return name, is_display_only
 
 
+_TWO_WAY_RE = re.compile(r"\((Batter|Pitcher)\)")
+
+
+def player_key(player_yahoo_id: str, label: str | None = None, *, role: str | None = None) -> str:
+    """"mlb.p.{id}", plus a ".batter"/".pitcher" suffix for either half of
+    a two-way player. Yahoo Fantasy treats e.g. "Shohei Ohtani (Batter)"
+    and "S. Ohtani (Pitcher)" as separate players, but both link to the
+    same sports.yahoo.com/mlb/players/{id} page -- confirmed live: keyed
+    by id alone they merged, giving both halves the pitcher's draft
+    round. `role` ("batter"/"pitcher") is for callers that know it from
+    something other than the label."""
+    m = _TWO_WAY_RE.search(label or "")
+    role = m.group(1).lower() if m else role
+    return f"mlb.p.{player_yahoo_id}" + (f".{role}" if role else "")
+
+
 def resolve_team_key(
     conn: sqlite3.Connection,
     season_year: int,

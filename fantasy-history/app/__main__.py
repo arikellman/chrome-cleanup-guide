@@ -503,6 +503,19 @@ def cmd_keeper_eligibility(args: argparse.Namespace) -> None:
                     "reflects last-day rosters (run `python -m app pull` first if transactions are stale).\n"
                 )
 
+        dupes = conn.execute(
+            """
+            SELECT player_key, 'draft' AS source FROM draft_picks
+                WHERE season_year = :y AND player_key IS NOT NULL GROUP BY player_key HAVING COUNT(*) > 1
+            UNION ALL
+            SELECT player_key, snapshot_date FROM roster_snapshots
+                WHERE season_year = :y AND snapshot_date IN (:s, :e) GROUP BY snapshot_date, player_key HAVING COUNT(*) > 1
+            """,
+            {"y": season_year, "s": start, "e": end},
+        ).fetchall()
+        for d in dupes:
+            print(f"WARNING: player {d['player_key']} appears more than once ({d['source']}); its status may be wrong.")
+
         report = keepers.build_report(conn, season_year, start, end)
         manager_names = config.get("manager_names", {})
         for t in report:

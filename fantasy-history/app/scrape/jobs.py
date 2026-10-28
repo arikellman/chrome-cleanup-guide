@@ -17,6 +17,7 @@ browser to test the parsing+DB-write half.
 from __future__ import annotations
 
 import datetime as dt
+from collections import Counter
 import logging
 import time
 from typing import Any
@@ -295,6 +296,10 @@ def ingest_draft_results_html(conn, html: str, season_year: int, league_id: str)
             "SELECT name, team_key FROM teams WHERE season_year = ?", (season_year,)
         ).fetchall()
     }
+    # Both halves of a two-way player share one id (see
+    # identity.player_key); if a label lacks the "(Batter)"/"(Pitcher)"
+    # tag, tell them apart by drafted position instead.
+    id_counts = Counter(p["player_yahoo_id"] for p in picks if p["player_yahoo_id"])
     rows = []
     skipped = 0
     for pick in picks:
@@ -319,12 +324,23 @@ def ingest_draft_results_html(conn, html: str, season_year: int, league_id: str)
                 "pick": _overall_pick_number(pick["round"], overall_pick, len(name_to_team_key) or 1),
                 "round": pick["round"],
                 "team_key": team_key,
-                "player_key": f"mlb.p.{pick['player_yahoo_id']}" if pick["player_yahoo_id"] else None,
+                "player_key": _draft_player_key(pick, id_counts),
                 "cost": pick.get("cost"),
             }
         )
     database.upsert_draft_picks(conn, rows)
     return {"picks": len(rows), "skipped": skipped}
+
+
+def _draft_player_key(pick: dict[str, Any], id_counts: Counter) -> str | None:
+    player_id = pick["player_yahoo_id"]
+    if not player_id:
+        return None
+    role = None
+    if id_counts[player_id] > 1:
+        positions = set((pick.get("position") or "").split(","))
+        role = "pitcher" if positions & {"SP", "RP", "P"} else "batter"
+    return identity.player_key(player_id, pick.get("label"), role=role)
 
 
 def _overall_pick_number(round_num: int, pick_in_round: int | None, teams_per_round: int) -> int:
@@ -837,7 +853,7 @@ def scrape_roster_snapshot(
                 "snapshot_date": snapshot_date,
                 "season_year": season_year,
                 "team_key": team["team_key"],
-                "player_key": f"mlb.p.{p['player_yahoo_id']}",
+                "player_key": identity.player_key(p["player_yahoo_id"], p["player_name"]),
                 "player_name": p["player_name"],
             }
             for p in players

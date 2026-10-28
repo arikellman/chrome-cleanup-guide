@@ -239,6 +239,7 @@ def parse_draft_results(html: str) -> list[dict[str, Any]]:
                     "pick_in_round": int(pick_text) if pick_text.isdigit() else None,
                     "player_yahoo_id": player_yahoo_id,
                     "player_name": name_m.group("name") if name_m else player_raw,
+                    "label": player_raw,
                     "mlb_team": name_m.group("mlb_team") if name_m else None,
                     "position": name_m.group("pos") if name_m else None,
                     "team_name": team_name,
