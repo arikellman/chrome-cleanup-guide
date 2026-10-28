@@ -504,12 +504,33 @@ def cmd_keeper_eligibility(args: argparse.Namespace) -> None:
                 )
 
         report = keepers.build_report(conn, season_year, start, end)
+        if args.pdf:
+            from app import keeper_pdf
+
+            league_name = conn.execute(
+                "SELECT league_name FROM seasons WHERE season_year = ?", (season_year,)
+            ).fetchone()
+            league_name = (league_name["league_name"] if league_name else None) or "League"
+            keeper_pdf.render(
+                report,
+                args.pdf,
+                title=f"{league_name} {season_year + 1} Eligible Keepers",
+                season_year=season_year,
+                freeze_date=start,
+                end_date=end,
+            )
+            print(f"Wrote {args.pdf}")
+            return
         print(f"Keeper eligibility for {season_year + 1}: frozen = same roster on {start} and {end}")
-        for team, players in report.items():
+        for t in report:
+            players = t["players"]
             n_eligible = sum(1 for p in players if p["status"] == keepers.ELIGIBLE)
-            print(f"\n{team} -- {len(players)} players, {n_eligible} keeper-eligible:")
+            print(f"\n{t['team']} -- {len(players)} players, {n_eligible} keeper-eligible:")
             for p in players:
-                print(f"  {p['player_name']:<28} {p['label']}")
+                label = p["label"]
+                if p["status"] == keepers.NOT_FROZEN:
+                    label += f" (Sep 1: {p['freeze_team'] or 'free agent'})"
+                print(f"  {p['player_name']:<28} {label}")
     finally:
         conn.close()
 
@@ -816,6 +837,7 @@ def main() -> None:
     )
     p_keeper.add_argument("--start", help="Freeze-date snapshot (YYYY-MM-DD). Default: Sep 1 of the season")
     p_keeper.add_argument("--end", help="End-of-season snapshot (YYYY-MM-DD). Default: latest snapshot")
+    p_keeper.add_argument("--pdf", metavar="PATH", help="Write the report as a PDF to PATH instead of printing it")
     p_keeper.set_defaults(func=cmd_keeper_eligibility)
 
     p_serve = sub.add_parser("serve", help="Run the daily scheduler + dashboard web server")

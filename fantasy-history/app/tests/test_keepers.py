@@ -73,8 +73,8 @@ class TestBuildReport(unittest.TestCase):
 
     def test_report(self):
         report = keepers.build_report(self.conn, 2026, "2026-09-01", "2026-10-28")
-        self.assertEqual(list(report), ["Alpha", "Beta"])
-        alpha = {p["player_name"]: p["label"] for p in report["Alpha"]}
+        self.assertEqual([t["team"] for t in report], ["Alpha", "Beta"])
+        alpha = {p["player_name"]: p["label"] for p in report[0]["players"]}
         self.assertEqual(
             alpha,
             {
@@ -86,8 +86,28 @@ class TestBuildReport(unittest.TestCase):
                 "p.traded": "Not frozen",
             },
         )
-        self.assertEqual([p["player_name"] for p in report["Alpha"]], ["p.kept", "p.free", "p.early", "p.traded"])
-        self.assertEqual([p["label"] for p in report["Beta"]], ["Not frozen"])
+        self.assertEqual(
+            [p["player_name"] for p in report[0]["players"]], ["p.kept", "p.free", "p.early", "p.traded"]
+        )
+        traded = report[0]["players"][-1]
+        self.assertEqual(traded["freeze_team"], "Beta")
+        late = report[1]["players"][0]
+        self.assertEqual((late["label"], late["freeze_team"]), ("Not frozen", None))
+
+    def test_pdf_renders(self):
+        import tempfile
+        from pathlib import Path
+
+        from app import keeper_pdf
+
+        report = keepers.build_report(self.conn, 2026, "2026-09-01", "2026-10-28")
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "k.pdf"
+            keeper_pdf.render(
+                report, str(path), title="Kippah 2027 Eligible Keepers", season_year=2026,
+                freeze_date="2026-09-01", end_date="2026-09-27",
+            )
+            self.assertTrue(path.read_bytes().startswith(b"%PDF"))
 
 
 if __name__ == "__main__":

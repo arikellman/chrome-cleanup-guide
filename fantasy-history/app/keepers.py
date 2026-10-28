@@ -1,10 +1,12 @@
 """League keeper rules.
 
 A player is "frozen" if he was on the SAME manager's roster on both the
-freeze date (Sep 1) and the last day of the season. A frozen player's
-keeper round is his current-season draft round minus KEEPER_ROUND_OFFSET,
-no matter who drafted him, capped at LATEST_KEEPER_ROUND (which is also
-the keeper round for undrafted players). Drafted in round
+freeze date (Sep 1 -- the active roster that day, including waiver
+claims processed overnight) and the last day of the season. A frozen
+player's keeper round is his current-season draft round minus
+KEEPER_ROUND_OFFSET, no matter who drafted him (a player kept this year
+counts at the round he was kept in), capped at LATEST_KEEPER_ROUND --
+which is also the keeper round for undrafted players. Drafted in round
 KEEPER_ROUND_OFFSET or earlier means not keeper-eligible at all.
 """
 from __future__ import annotations
@@ -49,11 +51,20 @@ _STATUS_ORDER = {ELIGIBLE: 0, NOT_ELIGIBLE: 1, NOT_FROZEN: 2}
 
 def build_report(
     conn: sqlite3.Connection, season_year: int, freeze_date: str, end_date: str
-) -> dict[str, list[dict[str, Any]]]:
-    """{team name: [player rows]} covering every player on each team's
-    `end_date` roster, sorted keepers-first by keeper round."""
-    freeze = {
-        (r["team_key"], r["player_key"])
+) -> list[dict[str, Any]]:
+    """One entry per team, sorted by team name: {"team", "manager",
+    "players"}, where players covers every player on that team's
+    `end_date` roster, sorted keepers-first by keeper round. Each player
+    also carries `freeze_team`: who had him on `freeze_date` (None = no
+    one, i.e. a free agent)."""
+    teams = {
+        r["team_key"]: {"team": r["name"] or r["team_key"], "manager": r["manager_nickname"]}
+        for r in conn.execute(
+            "SELECT team_key, name, manager_nickname FROM teams WHERE season_year = ?", (season_year,)
+        )
+    }
+    freeze_owner = {
+        r["player_key"]: r["team_key"]
         for r in conn.execute(
             "SELECT team_key, player_key FROM roster_snapshots WHERE season_year = ? AND snapshot_date = ?",
             (season_year, freeze_date),
@@ -67,24 +78,26 @@ def build_report(
         )
     }
     rows = conn.execute(
-        """
-        SELECT rs.team_key, COALESCE(t.name, rs.team_key) AS team_name, rs.player_key, rs.player_name
-        FROM roster_snapshots rs
-        LEFT JOIN teams t ON t.team_key = rs.team_key AND t.season_year = rs.season_year
-        WHERE rs.season_year = ? AND rs.snapshot_date = ?
-        """,
+        "SELECT team_key, player_key, player_name FROM roster_snapshots WHERE season_year = ? AND snapshot_date = ?",
         (season_year, end_date),
     ).fetchall()
 
-    report: dict[str, list[dict[str, Any]]] = {}
+    by_team: dict[str, dict[str, Any]] = {}
     for r in rows:
-        frozen = (r["team_key"], r["player_key"]) in freeze
+        meta = teams.get(r["team_key"], {"team": r["team_key"], "manager": None})
+        entry = by_team.setdefault(r["team_key"], {**meta, "players": []})
+        owner = freeze_owner.get(r["player_key"])
         dr = draft_round.get(r["player_key"])
-        report.setdefault(r["team_name"], []).append(
-            {"player_name": r["player_name"], "draft_round": dr, **player_status(frozen, dr)}
+        entry["players"].append(
+            {
+                "player_name": r["player_name"],
+                "draft_round": dr,
+                "freeze_team": teams[owner]["team"] if owner in teams else owner,
+                **player_status(owner == r["team_key"], dr),
+            }
         )
-    for players in report.values():
-        players.sort(
+    for entry in by_team.values():
+        entry["players"].sort(
             key=lambda p: (_STATUS_ORDER[p["status"]], p["keeper_round"] or 0, p["player_name"] or "")
         )
-    return dict(sorted(report.items()))
+    return sorted(by_team.values(), key=lambda e: e["team"])
