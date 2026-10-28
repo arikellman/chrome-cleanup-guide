@@ -1,0 +1,48 @@
+{
+  "0": {
+    "transaction": [
+      [
+        {"transaction_key": "458.l.12345.tr.1"},
+        {"type": "add/drop"},
+        {"status": "successful"},
+        {"timestamp": "1714000000"}
+      ],
+      {
+        "players": {
+          "0": {
+            "player": [
+              [
+                {"player_key": "458.p.1000"},
+                {"name": {"full": "Some Player"}}
+              ],
+              {
+                "transaction_data": {
+                  "type": "add",
+                  "source_team_key": null,
+                  "destination_team_key": "458.l.12345.t.1"
+                }
+              }
+            ]
+          },
+          "1": {
+            "player": [
+              [
+                {"player_key": "458.p.1001"},
+                {"name": {"full": "Other Player"}}
+              ],
+              {
+                "transaction_data": {
+                  "type": "drop",
+                  "source_team_key": "458.l.12345.t.1",
+                  "destination_team_key": null
+                }
+              }
+            ]
+          },
+          "count": 2
+        }
+      }
+    ]
+  },
+  "count": 1
+}

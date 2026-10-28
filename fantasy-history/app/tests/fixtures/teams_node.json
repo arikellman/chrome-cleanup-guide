@@ -1,0 +1,62 @@
+{
+  "0": {
+    "team": [
+      [
+        {"team_key": "458.l.12345.t.1"},
+        {"team_id": "1"},
+        {"name": "Bash Brothers"},
+        {"team_logos": {"0": {"team_logo": {"size": "medium", "url": "https://example.com/logo1.png"}}, "count": 1}},
+        {"managers": {"0": {"manager": {"manager_id": "1", "nickname": "Ari", "guid": "GUID1"}}, "count": 1}}
+      ],
+      {
+        "team_stats": {
+          "stats": {
+            "0": {"stat": {"stat_id": "7", "value": "845"}},
+            "1": {"stat": {"stat_id": "12", "value": "210"}},
+            "count": 2
+          }
+        }
+      },
+      {
+        "team_standings": {
+          "rank": "1",
+          "outcome_totals": {"wins": "80", "losses": "40", "ties": "0", "percentage": ".667"},
+          "games_back": "-",
+          "points_for": "1200.5",
+          "points_against": "1100.25",
+          "playoff_seed": "1"
+        }
+      }
+    ]
+  },
+  "1": {
+    "team": [
+      [
+        {"team_key": "458.l.12345.t.2"},
+        {"team_id": "2"},
+        {"name": "Diamond Dogs"},
+        {"managers": {"0": {"manager": {"manager_id": "2", "nickname": "Sam", "guid": "GUID2"}}, "count": 1}}
+      ],
+      {
+        "team_stats": {
+          "stats": {
+            "0": {"stat": {"stat_id": "7", "value": "700"}},
+            "1": {"stat": {"stat_id": "12", "value": "180"}},
+            "count": 2
+          }
+        }
+      },
+      {
+        "team_standings": {
+          "rank": "2",
+          "outcome_totals": {"wins": "60", "losses": "60", "ties": "0", "percentage": ".500"},
+          "games_back": "20",
+          "points_for": "1000.0",
+          "points_against": "1050.0",
+          "playoff_seed": "2"
+        }
+      }
+    ]
+  },
+  "count": 2
+}

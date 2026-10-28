@@ -1,0 +1,34 @@
+{
+  "fantasy_content": {
+    "users": {
+      "0": {
+        "user": [
+          [{"guid": "GUID1"}],
+          {
+            "games": {
+              "0": {
+                "game": [
+                  [
+                    {"game_key": "458"},
+                    {"game_id": "458"},
+                    {"name": "Baseball"},
+                    {"code": "mlb"},
+                    {"season": "2024"}
+                  ],
+                  {
+                    "leagues": {
+                      "0": {"league": [{"league_key": "458.l.12345"}, {"league_id": "12345"}, {"name": "The Boys of Summer"}, {"season": "2024"}]},
+                      "count": 1
+                    }
+                  }
+                ]
+              },
+              "count": 1
+            }
+          }
+        ]
+      },
+      "count": 1
+    }
+  }
+}

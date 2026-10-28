@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fantasy Baseball History</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <h1>🏆 Fantasy Baseball History</h1>
+  <select id="season-select"></select>
+  <select id="my-team-select"><option value="">My team...</option></select>
+  <span id="pull-status" class="pill">loading...</span>
+  <button id="pull-now">Pull now</button>
+</header>
+
+<nav class="tabs">
+  <button data-tab="standings" class="active">Standings</button>
+  <button data-tab="matchups">Matchups</button>
+  <button data-tab="h2h">Head-to-Head</button>
+  <button data-tab="categories">Categories</button>
+  <button data-tab="transactions">Transactions</button>
+  <button data-tab="history">History</button>
+</nav>
+
+<main>
+
+  <section id="panel-standings" class="panel active">
+    <div class="card">
+      <h2>Standings</h2>
+      <div id="standings-table"></div>
+    </div>
+    <div class="card">
+      <h2>Rank over time</h2>
+      <canvas id="standings-chart" class="chart" width="1100" height="360"></canvas>
+      <div id="standings-legend" class="legend"></div>
+    </div>
+    <div class="card" id="roto-standings-card" style="display:none">
+      <h2>Overall Stats</h2>
+      <div id="roto-stats-table" class="roto-table-wrap"></div>
+      <h2 style="margin-top:20px">Overall Points</h2>
+      <div id="roto-points-table" class="roto-table-wrap"></div>
+      <p style="color:var(--muted);font-size:12px;margin-top:8px">
+        Points are computed from each day's stat totals (best team in a category gets
+        one point per team in the league, ties split the points). Rate stats (ERA, WHIP, OBP)
+        may differ slightly from Yahoo's own numbers near the innings/at-bat minimum threshold,
+        which isn't modeled here.
+      </p>
+    </div>
+  </section>
+
+  <section id="panel-matchups" class="panel">
+    <div class="card">
+      <h2>Matchups</h2>
+      <div class="filters">
+        <select id="matchup-week-filter"><option value="">All weeks</option></select>
+        <select id="matchup-team-filter"><option value="">All teams</option></select>
+      </div>
+      <div id="matchups-table"></div>
+    </div>
+  </section>
+
+  <section id="panel-h2h" class="panel">
+    <div class="card">
+      <h2>Head-to-Head (all-time within selected season, or across all seasons)</h2>
+      <div class="filters">
+        <label><input type="checkbox" id="h2h-all-seasons"> All seasons combined</label>
+      </div>
+      <div id="h2h-table"></div>
+    </div>
+  </section>
+
+  <section id="panel-categories" class="panel">
+    <div class="card">
+      <h2>Category trend over time (day by day this season)</h2>
+      <div class="filters">
+        <select id="category-stat-filter"></select>
+      </div>
+      <canvas id="category-trend-chart" class="chart" width="1100" height="360"></canvas>
+      <div id="category-trend-legend" class="legend"></div>
+    </div>
+    <div id="category-winrate-section">
+      <div class="card">
+        <h2>Category win rates (matchups so far)</h2>
+        <canvas id="categories-chart" class="chart" width="1100" height="360"></canvas>
+      </div>
+      <div class="card">
+        <h2>All categories (table)</h2>
+        <div id="categories-table"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="panel-transactions" class="panel">
+    <div class="card">
+      <h2>Transactions</h2>
+      <div class="filters">
+        <select id="tx-team-filter"><option value="">All teams</option></select>
+        <select id="tx-type-filter">
+          <option value="">All types</option>
+          <option value="add">Add</option>
+          <option value="drop">Drop</option>
+          <option value="add/drop">Add/Drop</option>
+          <option value="trade">Trade</option>
+        </select>
+        <input type="text" id="tx-search" placeholder="Search player name...">
+      </div>
+      <div id="transactions-table"></div>
+    </div>
+  </section>
+
+  <section id="panel-history" class="panel">
+    <div class="card">
+      <h2>Season history</h2>
+      <div id="history-list"></div>
+    </div>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,228 @@
+-- Yahoo Fantasy Baseball history schema.
+-- Everything is keyed by season_year so multiple seasons coexist.
+-- matchup_team_stats.value and similar stat "value" columns are TEXT
+-- because Yahoo returns strings like "3.86" or "12/45"; cast in queries.
+
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS seasons (
+    season_year INTEGER PRIMARY KEY,
+    game_key TEXT NOT NULL,
+    league_key TEXT NOT NULL UNIQUE,
+    league_name TEXT,
+    num_teams INTEGER,
+    scoring_type TEXT,           -- 'head' | 'headpoint' | 'roto' | 'point'
+    start_week INTEGER,
+    end_week INTEGER,
+    start_date TEXT,
+    end_date TEXT,
+    playoff_start_week INTEGER,
+    is_finished INTEGER DEFAULT 0,
+    settings_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS stat_categories (
+    season_year INTEGER NOT NULL,
+    stat_id INTEGER NOT NULL,
+    name TEXT,
+    display_name TEXT,
+    sort_order INTEGER,       -- Yahoo's ranking DIRECTION flag: 1 = higher value is
+                              -- better (descending rank), 0 = lower is better (ERA,
+                              -- WHIP, ...). Used for roto point math, NOT column order.
+    display_order INTEGER,   -- position of this stat in Yahoo's own category list,
+                              -- i.e. the column order to display it in.
+    is_display_only INTEGER DEFAULT 0,
+    position_type TEXT,
+    PRIMARY KEY (season_year, stat_id)
+);
+
+CREATE TABLE IF NOT EXISTS teams (
+    season_year INTEGER NOT NULL,
+    team_key TEXT PRIMARY KEY,
+    team_id TEXT,
+    name TEXT,
+    logo_url TEXT,
+    manager_nickname TEXT,
+    manager_guid TEXT,
+    manager_key TEXT,         -- FK-ish to managers.manager_key (guid, or a
+                               -- "nick:<lowercased nickname>" fallback when
+                               -- guid is missing/hidden -- see
+                               -- parse.resolve_manager_key)
+    division_id TEXT,
+    -- Plain team-level fields Yahoo documents but this app previously
+    -- discarded; populated from the same teams/standings pull, no new API
+    -- call. UNVERIFIED field names against a live league.
+    faab_balance INTEGER,
+    waiver_priority INTEGER,
+    number_of_moves INTEGER,
+    number_of_trades INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_teams_season ON teams(season_year);
+CREATE INDEX IF NOT EXISTS idx_teams_manager_guid ON teams(manager_guid);
+CREATE INDEX IF NOT EXISTS idx_teams_manager_key ON teams(manager_key);
+
+-- One row per distinct manager, keyed by guid when Yahoo returns a real
+-- one, or a normalized-nickname fallback when guid comes back as the
+-- literal "--hidden--" (Yahoo hides other managers' guids from a pull
+-- made as a non-admin/non-commissioner user; UNVERIFIED exact literal
+-- against a live league response).
+CREATE TABLE IF NOT EXISTS managers (
+    manager_key TEXT PRIMARY KEY,
+    display_nickname TEXT
+);
+
+CREATE TABLE IF NOT EXISTS matchups (
+    matchup_id TEXT PRIMARY KEY,   -- synthetic: f"{season_year}:{week}:{team1_key}:{team2_key}"
+    season_year INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    team1_key TEXT NOT NULL,
+    team2_key TEXT NOT NULL,
+    is_playoffs INTEGER DEFAULT 0,
+    is_consolation INTEGER DEFAULT 0,
+    status TEXT,                   -- 'preevent' | 'midevent' | 'postevent'
+    winner_team_key TEXT,
+    is_tied INTEGER DEFAULT 0,
+    week_start_date TEXT,
+    week_end_date TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_matchups_season_week ON matchups(season_year, week);
+CREATE INDEX IF NOT EXISTS idx_matchups_teams ON matchups(team1_key, team2_key);
+
+CREATE TABLE IF NOT EXISTS matchup_team_stats (
+    matchup_id TEXT NOT NULL,
+    team_key TEXT NOT NULL,
+    stat_id INTEGER NOT NULL,
+    value TEXT,
+    won_category INTEGER,
+    tied_category INTEGER,
+    PRIMARY KEY (matchup_id, team_key, stat_id)
+);
+
+CREATE TABLE IF NOT EXISTS standings_snapshots (
+    snapshot_date TEXT NOT NULL,   -- ISO date of the pull
+    season_year INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    rank INTEGER,
+    wins INTEGER,
+    losses INTEGER,
+    ties INTEGER,
+    pct REAL,
+    games_back TEXT,
+    points_for REAL,
+    points_against REAL,
+    playoff_seed INTEGER,
+    PRIMARY KEY (snapshot_date, team_key)
+);
+CREATE INDEX IF NOT EXISTS idx_standings_season ON standings_snapshots(season_year);
+
+-- One row per (day, team, stat) so category totals (HR, RBI, ERA, ...)
+-- build up daily history within a season, not just a "latest" snapshot --
+-- this is what lets the dashboard show day-to-day and cumulative trends
+-- for every stat, not just win/loss rank.
+CREATE TABLE IF NOT EXISTS team_stat_snapshots (
+    snapshot_date TEXT NOT NULL,
+    season_year INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    stat_id INTEGER NOT NULL,
+    value TEXT,
+    PRIMARY KEY (snapshot_date, team_key, stat_id)
+);
+CREATE INDEX IF NOT EXISTS idx_team_stat_snapshots_season ON team_stat_snapshots(season_year, stat_id);
+
+-- One row per (day, team, stat) representing that SINGLE day's individual
+-- contribution to the category (e.g. "3 home runs on July 18"), fetched
+-- via Yahoo's type=date team stats, as opposed to team_stat_snapshots
+-- which holds the season-cumulative-to-date total as of a pull. Because
+-- Yahoo can answer "what happened on day X" for any past day (unlike the
+-- cumulative total, which is only ever "as of right now"), this table can
+-- be backfilled for the entire season retroactively, not just from
+-- whenever this app started running. snapshot_date here means "the date
+-- this stat contribution occurred", reusing the same row shape as
+-- team_stat_snapshots so the same parser can produce both.
+CREATE TABLE IF NOT EXISTS team_daily_stat_deltas (
+    snapshot_date TEXT NOT NULL,
+    season_year INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    stat_id INTEGER NOT NULL,
+    value TEXT,
+    PRIMARY KEY (snapshot_date, team_key, stat_id)
+);
+CREATE INDEX IF NOT EXISTS idx_team_daily_stat_deltas_season ON team_daily_stat_deltas(season_year, stat_id);
+
+-- One row per (rostered player, team, date) -- captures who was on which
+-- manager's roster on a given day, from the league's "All Taken Players"
+-- list (see app/scrape/parse.py's parse_taken_players_page), not from any
+-- one team's own page. Built for keeper-eligibility tracking: a player is
+-- typically keeper-eligible only if they were on the SAME manager's
+-- roster on two specific dates (e.g. a season-defined cutoff date and the
+-- last day of the season) -- comparing two snapshot_dates' rows for a
+-- given team_key (INTERSECT on player_key) answers that directly.
+CREATE TABLE IF NOT EXISTS roster_snapshots (
+    snapshot_date TEXT NOT NULL,
+    season_year INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    player_key TEXT NOT NULL,
+    player_name TEXT,
+    PRIMARY KEY (snapshot_date, team_key, player_key)
+);
+CREATE INDEX IF NOT EXISTS idx_roster_snapshots_season ON roster_snapshots(season_year, team_key);
+
+CREATE TABLE IF NOT EXISTS transactions (
+    transaction_key TEXT PRIMARY KEY,
+    season_year INTEGER NOT NULL,
+    type TEXT,                     -- 'add' | 'drop' | 'add/drop' | 'trade'
+    status TEXT,
+    timestamp INTEGER,
+    raw_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_transactions_season ON transactions(season_year);
+
+CREATE TABLE IF NOT EXISTS transaction_players (
+    transaction_key TEXT NOT NULL,
+    player_key TEXT NOT NULL,
+    player_name TEXT,
+    movement TEXT,                 -- 'add' | 'drop' | 'traded'
+    source_team_key TEXT,
+    dest_team_key TEXT,
+    PRIMARY KEY (transaction_key, player_key, movement)
+);
+
+-- One row per draft pick, from `league/{league_key}/draftresults`.
+-- player_key only -- names are intentionally not resolved here. cost is
+-- nullable because it only applies to auction-type drafts.
+CREATE TABLE IF NOT EXISTS draft_picks (
+    season_year INTEGER NOT NULL,
+    pick INTEGER NOT NULL,
+    round INTEGER,
+    team_key TEXT,
+    player_key TEXT,
+    cost INTEGER,
+    PRIMARY KEY (season_year, pick)
+);
+CREATE INDEX IF NOT EXISTS idx_draft_picks_team ON draft_picks(team_key);
+
+CREATE TABLE IF NOT EXISTS final_standings (
+    season_year INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    final_rank INTEGER,
+    PRIMARY KEY (season_year, team_key)
+);
+
+CREATE TABLE IF NOT EXISTS fetch_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_started_at TEXT NOT NULL,
+    run_finished_at TEXT,
+    kind TEXT NOT NULL,             -- 'daily' | 'backfill' | 'manual'
+    status TEXT NOT NULL,           -- 'ok' | 'partial' | 'error'
+    detail TEXT
+);
+
+CREATE TABLE IF NOT EXISTS raw_responses (
+    endpoint TEXT NOT NULL,
+    params TEXT NOT NULL,
+    season_year INTEGER,
+    week INTEGER,
+    fetched_at TEXT NOT NULL,
+    body_json TEXT NOT NULL,
+    PRIMARY KEY (endpoint, params)
+);

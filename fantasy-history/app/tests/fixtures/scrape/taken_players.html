@@ -1,0 +1,83 @@
+<!-- Hand-crafted minimal fixture mirroring the confirmed real structure of
+     baseball.fantasysports.yahoo.com/b1/{league_id}/players?status=T&pos=P
+     (the "All Taken Players" list, filtered to pitchers -- see
+     parse_taken_players_page's docstring for exactly what was validated
+     against a real saved page). NOT a raw copy of that real file -- the
+     real header row is far more complex (nested sort-link divs); the
+     parser only needs SOME row 0/1 pair and a "Roster Status" text
+     anchor to find the table, which this preserves. -->
+<table>
+  <tr>
+    <th colspan="3">Rankings</th>
+    <th>Trends</th>
+    <th colspan="7">Season (total)</th>
+  </tr>
+  <tr>
+    <th></th>
+    <th></th>
+    <th>Pitchers</th>
+    <th>Opp</th>
+    <th>Roster Status</th>
+    <th>GP*</th>
+    <th>Pre-Season</th>
+    <th>Current</th>
+    <th>% Ros</th>
+    <th>IP*</th>
+    <th>W</th>
+    <th>SV</th>
+    <th>K</th>
+  </tr>
+  <tr>
+    <td></td>
+    <td></td>
+    <td class="player">
+      <a class="Nowrap name F-link playernote" href="https://sports.yahoo.com/mlb/players/60254" title="Jacob Misiorowski">Jacob Misiorowski</a>
+      <span class="player-status"><a class="playernote" href="https://sports.yahoo.com/mlb/players/60254/news">Player Note</a></span>
+    </td>
+    <td>@ CHC</td>
+    <td><div style="text-overflow: ellipsis; overflow: hidden;"><a href="/b1/74647/9">Prime Time</a></div></td>
+    <td>25</td>
+    <td>9</td>
+    <td>1</td>
+    <td>98%</td>
+    <td>151.0</td>
+    <td>14</td>
+    <td>0</td>
+    <td>222</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td></td>
+    <td class="player">
+      <a class="Nowrap name F-link playernote" href="https://sports.yahoo.com/mlb/players/64985" title="Cam Schlittler">Cam Schlittler</a>
+      <span class="player-status"><a class="playernote" href="https://sports.yahoo.com/mlb/players/64985/news">Player Note</a></span>
+    </td>
+    <td>@ LAA</td>
+    <td><div style="text-overflow: ellipsis; overflow: hidden;"><a href="/b1/74647/8">Bat Intentions</a></div></td>
+    <td>28</td>
+    <td>14</td>
+    <td>4</td>
+    <td>98%</td>
+    <td>163.2</td>
+    <td>12</td>
+    <td>0</td>
+    <td>201</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td></td>
+    <td class="player">
+      <a class="Nowrap name F-link playernote" href="https://sports.yahoo.com/mlb/players/8780" title="Chris Sale">Chris Sale</a>
+    </td>
+    <td>@ WSH</td>
+    <td><div style="text-overflow: ellipsis; overflow: hidden;"><a href="/b1/74647/10">Team Grimace (Gri-MAH-Chay)</a></div></td>
+    <td>24</td>
+    <td>26</td>
+    <td>7</td>
+    <td>99%</td>
+    <td>144.0</td>
+    <td>13</td>
+    <td>0</td>
+    <td>177</td>
+  </tr>
+</table>
