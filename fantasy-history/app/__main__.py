@@ -520,6 +520,11 @@ def cmd_keeper_eligibility(args: argparse.Namespace) -> None:
         manager_names = config.get("manager_names", {})
         for t in report:
             t["manager"] = manager_names.get(t["team"], t["manager"])
+        excluded = {e.casefold() for e in args.exclude}
+        report = [
+            t for t in report
+            if t["team"].casefold() not in excluded and (t["manager"] or "").casefold() not in excluded
+        ]
         if args.pdf:
             from app import keeper_pdf
 
@@ -855,6 +860,10 @@ def main() -> None:
     p_keeper.add_argument("--start", help="Freeze-date snapshot (YYYY-MM-DD). Default: Sep 1 of the season")
     p_keeper.add_argument("--end", help="End-of-season snapshot (YYYY-MM-DD). Default: latest snapshot")
     p_keeper.add_argument("--pdf", metavar="PATH", help="Write the report as a PDF to PATH instead of printing it")
+    p_keeper.add_argument(
+        "--exclude", action="append", default=[], metavar="NAME",
+        help="Leave out a team, by team or manager name (repeatable)",
+    )
     p_keeper.set_defaults(func=cmd_keeper_eligibility)
 
     p_serve = sub.add_parser("serve", help="Run the daily scheduler + dashboard web server")
