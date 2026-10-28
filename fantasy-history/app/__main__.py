@@ -449,47 +449,62 @@ def cmd_scrape_roster_snapshot(args: argparse.Namespace) -> None:
 
 
 def cmd_keeper_eligibility(args: argparse.Namespace) -> None:
-    """Compares two roster snapshots (see cmd_scrape_roster_snapshot) and
-    prints, per team, every player who was on that SAME manager's roster
-    on BOTH dates -- the standard keeper-eligibility rule this was built
-    for ("must have been on a manager's roster on [date] and the last day
-    of the season")."""
+    """Prints each manager's ending roster with a keeper status per player
+    (see app/keepers.py for the rules), comparing the freeze-date roster
+    snapshot (--start, default Sep 1) against the end-of-season one
+    (--end, default the latest snapshot taken)."""
+    from app import keepers
+
     config = cfg.load_config()
     season_year = config.get("yahoo_web_current_season_year")
     conn = database.get_connection()
     try:
-        available = {
+        available = sorted(
             r["snapshot_date"]
             for r in conn.execute(
                 "SELECT DISTINCT snapshot_date FROM roster_snapshots WHERE season_year = ?", (season_year,)
             ).fetchall()
-        }
-        missing = [d for d in (args.start, args.end) if d not in available]
-        if missing:
-            print(f"No roster snapshot for: {', '.join(missing)}. Available dates: {sorted(available)}")
+        )
+        start = args.start or f"{season_year}-09-01"
+        end = args.end or (available[-1] if available else None)
+        missing = [d for d in (start, end) if d not in available]
+        if missing or start == end:
+            print(
+                f"Need two different roster snapshots; missing: {missing or [end]}. Available dates: {available}\n"
+                "Take the end-of-season one with: python -m app scrape-roster-snapshot"
+            )
             sys.exit(1)
 
-        rows = conn.execute(
-            """
-            SELECT COALESCE(t.name, rs1.team_key) AS team_name, rs1.player_name
-            FROM roster_snapshots rs1
-            JOIN roster_snapshots rs2
-                ON rs2.player_key = rs1.player_key AND rs2.team_key = rs1.team_key
-                AND rs2.season_year = rs1.season_year AND rs2.snapshot_date = ?
-            LEFT JOIN teams t ON t.team_key = rs1.team_key AND t.season_year = rs1.season_year
-            WHERE rs1.snapshot_date = ? AND rs1.season_year = ?
-            ORDER BY team_name, rs1.player_name
-            """,
-            (args.end, args.start, season_year),
-        ).fetchall()
+        # A snapshot taken after the season ended only stands in for the
+        # last day's roster if nobody made a move in between.
+        season_end = conn.execute(
+            "SELECT end_date FROM seasons WHERE season_year = ?", (season_year,)
+        ).fetchone()
+        season_end = season_end["end_date"] if season_end else None
+        if season_end and end > season_end:
+            cutoff = dt.datetime.fromisoformat(season_end).replace(tzinfo=dt.timezone.utc) + dt.timedelta(days=1)
+            late = conn.execute(
+                "SELECT COUNT(*) AS n FROM transactions WHERE season_year = ? AND timestamp >= ?",
+                (season_year, int(cutoff.timestamp())),
+            ).fetchone()["n"]
+            if late:
+                print(
+                    f"WARNING: {late} transaction(s) recorded after the season ended ({season_end}); "
+                    f"the {end} snapshot may not match last-day rosters.\n"
+                )
+            else:
+                print(
+                    f"Season ended {season_end}; no transactions recorded since, so the {end} snapshot "
+                    "reflects last-day rosters (run `python -m app pull` first if transactions are stale).\n"
+                )
 
-        by_team: dict[str, list[str]] = {}
-        for r in rows:
-            by_team.setdefault(r["team_name"], []).append(r["player_name"])
-        for team, players in by_team.items():
-            print(f"\n{team} -- {len(players)} eligible:")
+        report = keepers.build_report(conn, season_year, start, end)
+        print(f"Keeper eligibility for {season_year + 1}: frozen = same roster on {start} and {end}")
+        for team, players in report.items():
+            n_eligible = sum(1 for p in players if p["status"] == keepers.ELIGIBLE)
+            print(f"\n{team} -- {len(players)} players, {n_eligible} keeper-eligible:")
             for p in players:
-                print(f"  {p}")
+                print(f"  {p['player_name']:<28} {p['label']}")
     finally:
         conn.close()
 
@@ -792,10 +807,10 @@ def main() -> None:
 
     p_keeper = sub.add_parser(
         "keeper-eligibility",
-        help="Compare two roster snapshots and list, per team, players eligible to keep (on that roster both dates)",
+        help="Per manager: ending roster with each player's keeper status (not frozen / not eligible / keeper round)",
     )
-    p_keeper.add_argument("--start", required=True, help="ISO date (YYYY-MM-DD) of the earlier snapshot")
-    p_keeper.add_argument("--end", required=True, help="ISO date (YYYY-MM-DD) of the later snapshot")
+    p_keeper.add_argument("--start", help="Freeze-date snapshot (YYYY-MM-DD). Default: Sep 1 of the season")
+    p_keeper.add_argument("--end", help="End-of-season snapshot (YYYY-MM-DD). Default: latest snapshot")
     p_keeper.set_defaults(func=cmd_keeper_eligibility)
 
     p_serve = sub.add_parser("serve", help="Run the daily scheduler + dashboard web server")
