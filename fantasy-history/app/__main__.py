@@ -468,10 +468,13 @@ def cmd_keeper_eligibility(args: argparse.Namespace) -> None:
         start = args.start or f"{season_year}-09-01"
         end = args.end or (available[-1] if available else None)
         missing = [d for d in (start, end) if d not in available]
-        if missing or start == end:
+        if missing:
+            print(f"No roster snapshot for: {', '.join(missing)}. Available dates: {available}")
+            sys.exit(1)
+        if start == end:
             print(
-                f"Need two different roster snapshots; missing: {missing or [end]}. Available dates: {available}\n"
-                "Take the end-of-season one with: python -m app scrape-roster-snapshot"
+                f"Only one roster snapshot ({start}) -- need an end-of-season one too. "
+                "Take it with: python -m app scrape-roster-snapshot"
             )
             sys.exit(1)
 
